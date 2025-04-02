@@ -12,7 +12,7 @@ dotenv.config();
 
 // Enum definitions based on the provided code
 enum RequestyAiModelEnum {
-  claude37Sonnet = "anthropic/claude-3-7-sonnet-20240229",
+  claude37Sonnet = "anthropic/claude-3-7-sonnet-latest",
   geminiFlash2 = "google/gemini-2.0-flash-001",
 }
 
@@ -142,7 +142,7 @@ class BatchSQLEvaluator {
       const requestPayload: RequestyChatRequest = {
         model,
         messages,
-        temperature: 0.7,
+        temperature: 0,
         requesty: {
           user_id: userId,
           extra: {
