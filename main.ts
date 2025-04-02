@@ -426,7 +426,7 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
     console.log(`Results exported to ${outputPath}`);
   }
 
-  public async runBatch(outputDir: string = "./results"): Promise<{
+  public async runBatch(outputDir: string = "./output"): Promise<{
     results: QuestionResult[];
     statistics: AggregateStatistics;
   }> {
