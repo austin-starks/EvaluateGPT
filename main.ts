@@ -539,7 +539,7 @@ async function main() {
     systemPrompt,
     evaluationPrompt,
     apiKey: apiKey,
-    queryModel: RequestyAiModelEnum.gemini25Pro, // Gemini Flash 2 for queries
+    queryModel: RequestyAiModelEnum.deepSeekV3, // Gemini Flash 2 for queries
     evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
     questions,
   });
