@@ -16,6 +16,7 @@ enum RequestyAiModelEnum {
   claude37Sonnet = "anthropic/claude-3-7-sonnet-latest",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   deepSeekV3 = "nebius/deepseek-ai/DeepSeek-V3-0324",
+  gemini25Pro = "google/gemini-2.5-pro-exp-03-25",
 }
 
 // Types
