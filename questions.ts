@@ -1,0 +1,15 @@
+export const questions = [
+  "What AI stocks have the highest market cap?",
+  "Calculate the average daily trading volume for Apple stock in the past month",
+  "List companies with revenue growth of more than 20% year-over-year",
+  "Which stock had the highest volatility in the past quarter?",
+  "Find all stocks that pay dividends with a yield above 3%",
+  "What was the total market cap of the S&P 500 at the end of last quarter?",
+  "Find stocks trading below their 200-day moving average",
+  "Which sector had the best performance in the most recent quarter?",
+  "List all stocks with a beta greater than 1.5",
+  "Find companies with increasing profit margins over the last 3 years",
+  "Which bank stocks have the lowest price-to-book ratios?",
+  "What were the top 10 best performing stocks of last year?",
+  "Which EV companies have the highest debt-to-equity ratios?",
+];
