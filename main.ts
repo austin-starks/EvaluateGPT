@@ -449,14 +449,39 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
 
     // Export results
     const timestamp = new Date().toISOString().replace(/:/g, "-");
-    const resultsPath = path.join(outputDir, `results_${timestamp}.csv`);
-    const statsPath = path.join(outputDir, `statistics_${timestamp}.json`);
+    const modelInfo = `${this.queryModel}_${this.evaluationModel}`.replace(
+      /\//g,
+      "_"
+    );
+    const resultsPath = path.join(
+      outputDir,
+      `results_${modelInfo}_${timestamp}.csv`
+    );
+    const statsPath = path.join(
+      outputDir,
+      `statistics_${modelInfo}_${timestamp}.json`
+    );
 
     await this.exportResultsToCSV(this.results, resultsPath);
-    fs.writeFileSync(statsPath, JSON.stringify(statistics, null, 2));
+    fs.writeFileSync(
+      statsPath,
+      JSON.stringify(
+        {
+          ...statistics,
+          models: {
+            queryModel: this.queryModel,
+            evaluationModel: this.evaluationModel,
+          },
+        },
+        null,
+        2
+      )
+    );
 
     // Print summary
     console.log("\n========== EVALUATION SUMMARY ==========");
+    console.log(`Query Model: ${this.queryModel}`);
+    console.log(`Evaluation Model: ${this.evaluationModel}`);
     console.log(`Total questions: ${this.questions.length}`);
     console.log(
       `Successful queries: ${
@@ -514,7 +539,7 @@ async function main() {
     systemPrompt,
     evaluationPrompt,
     apiKey: apiKey,
-    queryModel: RequestyAiModelEnum.deepSeekV3, // Gemini Flash 2 for queries
+    queryModel: RequestyAiModelEnum.gemini25Pro, // Gemini Flash 2 for queries
     evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
     questions,
   });
