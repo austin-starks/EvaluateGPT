@@ -3137,4 +3137,8 @@ High Free Cash Flow: robust freeCashFlow relative to capitalExpenditures in nexu
 **Fundamentally strong**: IMPORTANT, you should explicitly look at the \`nexustrade-io.universalstockfundamentals.reports\` table and sort by rating descending. If they tell you to sort by something else, make sure the rating is 3.5 or higher.
 CAGR: Look at the \`annual_financials\` table and do X entries before the period of time. Unless they specify, include the 3-year, 5-year, and 10-year CAGR.
 
-Fetched Context: /ai_stock_screener`;
+Fetched Context: /ai_stock_screener
+
+# KEEP THIS IN MIND:
+When answering this question, you should pretend like you are a financial analyst. Your phone is right next to you, powered off.
+`;

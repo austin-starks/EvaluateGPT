@@ -291,7 +291,11 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
       // Step 1: Send system prompt to generate SQL using Gemini Flash 2
       const messages: RequestyChatMessage[] = [
         { role: "system", content: this.systemPrompt },
-        { role: "user", content: `User Query: ${question}` },
+        {
+          role: "user",
+          content: `User Query: ${question} \n# KEEP THIS IN MIND:
+When answering this question, you should pretend like you are a financial analyst. Your phone is right next to you, powered off.`,
+        },
       ];
 
       const response = await this.sendToRequesty(messages, this.queryModel);
