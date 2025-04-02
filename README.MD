@@ -30,7 +30,7 @@ npm install
 3. Install the following npm packages:
 
 ```bash
-npm install axios dotenv @google-cloud/bigquery fs path csv-writer
+npm install axios dotenv @google-cloud/bigquery fs path csv-writer ts-node typescript @types/node
 ```
 
 4. Configure environment variables in a `.env` file:
@@ -52,28 +52,35 @@ The main configuration options are:
 
 ## Usage
 
-```typescript
-import BatchSQLEvaluator, {
-  RequestyAiModelEnum,
-} from "./path/to/BatchSQLEvaluator";
+Run the evaluation using ts-node:
 
-// Create the evaluator
-const evaluator = new BatchSQLEvaluator({
-  systemPrompt: "Your system prompt here...",
-  evaluationPrompt: "Your evaluation prompt here...",
-  queryModel: RequestyAiModelEnum.geminiFlash2,
-  evaluationModel: RequestyAiModelEnum.claude37Sonnet,
-  apiKey: process.env.REQUESTY_API_KEY,
-  questions: [
-    "Find the top 5 tech stocks with the highest price-to-earnings ratio",
-    "Calculate the average daily trading volume for Apple stock",
-    // Add more questions...
-  ],
-});
-
-// Run the batch evaluation
-const results = await evaluator.runBatch("./output");
+```bash
+npx ts-node main.ts
 ```
+
+Alternatively, you can add a script to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "start": "ts-node main.ts"
+  }
+}
+```
+
+Then run:
+
+```bash
+npm run start
+```
+
+The script will:
+
+1. Process each question in the `questions` array
+2. Generate SQL queries using Gemini Flash 2
+3. Execute queries against BigQuery
+4. Evaluate results using Claude 3.7 Sonnet
+5. Generate detailed output files in the `./output` directory
 
 ## Output
 
