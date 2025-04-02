@@ -15,6 +15,7 @@ dotenv.config();
 enum RequestyAiModelEnum {
   claude37Sonnet = "anthropic/claude-3-7-sonnet-latest",
   geminiFlash2 = "google/gemini-2.0-flash-001",
+  deepSeekV3 = "nebius/deepseek-ai/DeepSeek-V3-0324",
 }
 
 // Types
@@ -512,7 +513,7 @@ async function main() {
     systemPrompt,
     evaluationPrompt,
     apiKey: apiKey,
-    queryModel: RequestyAiModelEnum.geminiFlash2, // Gemini Flash 2 for queries
+    queryModel: RequestyAiModelEnum.deepSeekV3, // Gemini Flash 2 for queries
     evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
     questions,
   });
