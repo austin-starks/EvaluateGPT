@@ -472,6 +472,10 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
             queryModel: this.queryModel,
             evaluationModel: this.evaluationModel,
           },
+          prompts: {
+            systemPrompt: this.systemPrompt,
+            evaluationPrompt: this.evaluationPrompt,
+          },
         },
         null,
         2
@@ -482,6 +486,12 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
     console.log("\n========== EVALUATION SUMMARY ==========");
     console.log(`Query Model: ${this.queryModel}`);
     console.log(`Evaluation Model: ${this.evaluationModel}`);
+    console.log("\nSystem Prompts:");
+    console.log("Query System Prompt:");
+    console.log(this.systemPrompt);
+    console.log("\nEvaluation System Prompt:");
+    console.log(this.evaluationPrompt);
+    console.log("\nResults:");
     console.log(`Total questions: ${this.questions.length}`);
     console.log(
       `Successful queries: ${
@@ -539,7 +549,7 @@ async function main() {
     systemPrompt,
     evaluationPrompt,
     apiKey: apiKey,
-    queryModel: RequestyAiModelEnum.deepSeekV3, // Gemini Flash 2 for queries
+    queryModel: RequestyAiModelEnum.geminiFlash2, // Gemini Flash 2 for queries
     evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
     questions,
   });
