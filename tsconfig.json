@@ -12,6 +12,6 @@
     "noImplicitAny": false,
     "strictNullChecks": false
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "systemPrompts/systemPrompt.ts"],
   "exclude": ["node_modules"]
 }

@@ -2,10 +2,11 @@ import { BigQuery } from "@google-cloud/bigquery";
 import axios from "axios";
 import { createObjectCsvWriter } from "csv-writer";
 import dotenv from "dotenv";
+import { evaluationPrompt } from "./systemPrompts/evaluationPrompt";
 import fs from "fs";
 import path from "path";
 import { questions } from "./questions";
-import { systemPrompt } from "./systemPrompt";
+import { systemPrompt } from "./systemPrompts/systemPrompt";
 
 // Load environment variables
 dotenv.config();
@@ -502,30 +503,6 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
 
 // Example usage
 async function main() {
-  const evaluationPrompt = `You are an expert at evaluating SQL queries and their results for financial analysis. Your task is to assess the quality, correctness, and relevance of a SQL query and its results based on financial data.
-
-Evaluate the following SQL query, the thought process that led to it, and the results it produced.
-
-Score the overall quality on a scale from 0 to 1, where:
-- 0.0-0.2: Poor - Query has serious flaws or doesn't answer the intended question
-- 0.3-0.5: Fair - Query works but has inefficiencies or only partially answers the question
-- 0.6-0.7: Good - Query correctly answers the question with minor room for improvement
-- 0.8-0.9: Very Good - Query efficiently and completely answers the question
-- 1.0: Excellent - Query is optimal in all respects
-
-Return your evaluation in JSON format with:
-- value: The numeric score (0-1)
-- explanation: A detailed explanation of your evaluation
-
-Example output:
-\`\`\`json
-{
-  "value": number,
-  "explanation": string
-}
-\`\`\`
-`;
-
   const apiKey = process.env.REQUESTY_API_KEY;
   if (!apiKey) {
     throw new Error("REQUESTY_API_KEY environment variable is not set");
