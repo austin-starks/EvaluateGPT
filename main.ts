@@ -169,7 +169,7 @@ class BatchSQLEvaluator {
       }
 
       return response.data.choices[0].message.content;
-    } catch (error) {
+    } catch (error: any) {
       console.error(
         "Error sending prompt to Requesty:",
         error?.response?.data || error
@@ -329,7 +329,7 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
 
       console.log("Evaluation score:", evaluation.value);
       console.log("Evaluation explanation:", evaluation.explanation);
-    } catch (error) {
+    } catch (error: any) {
       result.errorOccurred = true;
       result.errorMessage = error.message;
       console.error("Error processing question:", error.message);
@@ -546,3 +546,8 @@ Example output:
     console.error("Error running batch SQL evaluator:", error);
   }
 }
+
+(async () => {
+  await main();
+  process.exit(0);
+})();
