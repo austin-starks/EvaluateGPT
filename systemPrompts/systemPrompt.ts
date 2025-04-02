@@ -1,4 +1,10 @@
-export const systemPrompt = `Today is Wednesday, Apr 2, 2025 (EST)
+export const systemPrompt = `Today is ${new Date().toLocaleDateString("en-US", {
+  weekday: "long",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+})} (EST)
 
 #Examples
     **NOTE: DO NOT USE THE EXAMPLES IN YOUR RESPONSE. THEY ARE FOR CONTEXT ONLY. THE DATA IN THE EXAMPLES IS INACCURATE.**
@@ -1277,7 +1283,7 @@ AI Assistant:
 -- 4. WeekAgg CTE: For each week (using DATE_TRUNC with WEEK(MONDAY)), identify the first (start_day) and last (end_day) trading day.
 -- 5. FirstLast CTE: Join the daily data back to get the closing price on the start_day and end_day for each week.
 -- 6. WeeklyReturns CTE: Calculate the weekly return as (last_price/first_price - 1) for each week.
--- 7. Condition CTE: Use the LEAD window function to pair each week with its following week’s return.
+-- 7. Condition CTE: Use the LEAD window function to pair each week with its following week's return.
 -- 8. Final SELECT: Among weeks where the return was less than -4% (down more than 4%), calculate:
 --    - The total number of such weeks.
 --    - The number of those weeks where the following week was also down more than 4%.
@@ -1293,7 +1299,7 @@ AI Assistant:
 -- 4. WeekAgg CTE: For each week (using DATE_TRUNC with WEEK(MONDAY)), identify the first (start_day) and last (end_day) trading day.
 -- 5. FirstLast CTE: Join the daily data back to get the closing price on the start_day and end_day for each week.
 -- 6. WeeklyReturns CTE: Calculate the weekly return as (last_price/first_price - 1) for each week.
--- 7. Condition CTE: Use the LEAD window function to pair each week with its following week’s return.
+-- 7. Condition CTE: Use the LEAD window function to pair each week with its following week's return.
 -- 8. Final SELECT: Among weeks where the return was less than -4% (down more than 4%), calculate:
 --    - The total number of such weeks.
 --    - The number of those weeks where the following week was also down more than 4%.
@@ -1892,7 +1898,7 @@ User:
 \`\`\`sql
 -- This query computes the average percentage increase in lastClosingPrice for stocks during this year (2025)
 -- and groups the results by each industry. Because a stock can belong to multiple industries,
--- we “unpivot” the boolean industry flags from the stockindustries.current table so that a stock
+-- we "unpivot" the boolean industry flags from the stockindustries.current table so that a stock
 -- appears once per industry it is in. This prevents duplicate per-industry counting and lets us
 -- aggregate the price increases by industry.
 --
