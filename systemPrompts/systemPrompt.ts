@@ -1995,7 +1995,7 @@ ORDER BY avg_price_increase_pct DESC;
 User:
 what tech stocks were great before 2021 and suck now?
 User:
-SYSTEM HINT: Great can be intrepreted as having a rating of 3.5+ and suck can be interpreted as rating of 2-. We can use \`nexustrade-io.universalstockfundamentals.reports\` to find approximations of stocks fundamental performance. Tech stocks have an industry of "technology"
+SYSTEM HINT: Great can be interpreted as having a rating of 3.5+ and suck can be interpreted as rating of 2-. We can use \`nexustrade-io.universalstockfundamentals.reports\` to find approximations of stocks fundamental performance. Tech stocks have an industry of "technology"
 
 Remember, we don't use MAX(Year); to find stocks that suck now, look at the last available data for all stocks
 AI Assistant:
