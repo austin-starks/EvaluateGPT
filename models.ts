@@ -40,24 +40,12 @@ export class ModelRouter {
       return this.sendToRequesty(messages, this.model as RequestyAiModelEnum);
     }
 
-    if (
-      Object.values(OpenRouterAiModelEnum).includes(
-        this.model as OpenRouterAiModelEnum
-      )
-    ) {
-      return this.sendToOpenRouter(
-        messages,
-        this.model as OpenRouterAiModelEnum
-      );
-    }
-
-    throw new Error(`Unknown model: ${this.model}`);
+    return this.sendToOpenRouter(messages, this.model as OpenRouterAiModelEnum);
   }
 
-  public async sendToRequesty(
+  private async sendToRequesty(
     messages: ChatMessage[],
-    model: RequestyAiModelEnum,
-    userId: string = "batch-evaluator"
+    model: RequestyAiModelEnum
   ): Promise<string> {
     try {
       const requestPayload = {
@@ -65,7 +53,7 @@ export class ModelRouter {
         messages,
         temperature: 0,
         requesty: {
-          user_id: userId,
+          user_id: "EvaluateGPT",
           extra: {
             title: "EvaluateGPT",
           },
@@ -95,6 +83,53 @@ export class ModelRouter {
     } catch (error: any) {
       console.error(
         "Error sending prompt to Requesty:",
+        error?.response?.data || error
+      );
+      throw error;
+    }
+  }
+
+  private async sendToOpenRouter(
+    messages: ChatMessage[],
+    model: OpenRouterAiModelEnum
+  ): Promise<string> {
+    try {
+      const requestPayload = {
+        model,
+        messages,
+        temperature: 0,
+        user: "EvaluateGPT",
+      };
+
+      const apiKey = process.env.OPENROUTER_API_KEY;
+
+      if (!apiKey) {
+        throw new Error("OPENROUTER_API_KEY is not set");
+      }
+
+      const headers = {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://evaluategpt.com",
+        "X-Title": "EvaluateGPT",
+      };
+
+      const response = await axios.post(
+        this.openRouterBaseUrl,
+        requestPayload,
+        {
+          headers,
+        }
+      );
+
+      if (!response.data.choices[0].message?.content) {
+        throw new Error("No content in OpenRouter response");
+      }
+
+      return response.data.choices[0].message.content;
+    } catch (error: any) {
+      console.error(
+        "Error sending prompt to OpenRouter:",
         error?.response?.data || error
       );
       throw error;
