@@ -1,3 +1,10 @@
+import {
+  AiModelEnum,
+  ChatMessage,
+  ModelRouter,
+  RequestyAiModelEnum,
+} from "./models";
+
 import { BigQuery } from "@google-cloud/bigquery";
 import axios from "axios";
 import { createObjectCsvWriter } from "csv-writer";
@@ -11,14 +18,6 @@ import { systemPrompt } from "./systemPrompts/systemPrompt";
 // Load environment variables
 dotenv.config();
 
-// Enum definitions based on the provided code
-enum RequestyAiModelEnum {
-  claude37Sonnet = "anthropic/claude-3-7-sonnet-latest",
-  geminiFlash2 = "google/gemini-2.0-flash-001",
-  deepSeekV3 = "nebius/deepseek-ai/DeepSeek-V3-0324",
-  gemini25Pro = "google/gemini-2.5-pro-exp-03-25",
-}
-
 // Types
 interface QueryResponse {
   content: string;
@@ -28,31 +27,6 @@ interface QueryResponse {
 interface EvaluationResult {
   value: number;
   explanation: string;
-}
-
-interface RequestyChatMessage {
-  role: string;
-  content: string;
-}
-
-interface RequestyChatRequest {
-  model: string;
-  messages: RequestyChatMessage[];
-  temperature: number;
-  requesty: {
-    user_id: string;
-    extra: {
-      title: string;
-    };
-  };
-}
-
-interface RequestyChatResponse {
-  choices: {
-    message: {
-      content: string;
-    };
-  }[];
 }
 
 interface QuestionResult {
@@ -86,35 +60,29 @@ interface AggregateStatistics {
 class BatchSQLEvaluator {
   private systemPrompt: string;
   private evaluationPrompt: string;
-  private queryModel: RequestyAiModelEnum;
-  private evaluationModel: RequestyAiModelEnum;
-  private apiKey: string;
+  private queryModel: AiModelEnum;
+  private evaluationModel: AiModelEnum;
   private bigquery: BigQuery;
   private questions: string[];
   private results: QuestionResult[] = [];
-  private requestyBaseUrl: string =
-    "https://router.requesty.ai/v1/chat/completions";
 
   constructor({
     systemPrompt,
     evaluationPrompt,
     queryModel,
     evaluationModel,
-    apiKey,
     questions,
   }: {
     systemPrompt: string;
     evaluationPrompt: string;
-    queryModel: RequestyAiModelEnum;
-    evaluationModel: RequestyAiModelEnum;
-    apiKey: string;
+    queryModel: AiModelEnum;
+    evaluationModel: AiModelEnum;
     questions: string[];
   }) {
     this.systemPrompt = systemPrompt;
     this.evaluationPrompt = evaluationPrompt;
     this.queryModel = queryModel;
     this.evaluationModel = evaluationModel;
-    this.apiKey = apiKey;
     this.questions = questions;
 
     // Initialize BigQuery with credentials from environment variable
@@ -133,51 +101,6 @@ class BatchSQLEvaluator {
       return JSON.parse(credentialsJson);
     } catch (error) {
       throw new Error("Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON");
-    }
-  }
-
-  private async sendToRequesty(
-    messages: RequestyChatMessage[],
-    model: RequestyAiModelEnum,
-    userId: string = "batch-evaluator"
-  ): Promise<string> {
-    try {
-      const requestPayload: RequestyChatRequest = {
-        model,
-        messages,
-        temperature: 0,
-        requesty: {
-          user_id: userId,
-          extra: {
-            title: "SQL Evaluation",
-          },
-        },
-      };
-
-      const headers = {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      };
-
-      const response = await axios.post<RequestyChatResponse>(
-        this.requestyBaseUrl,
-        requestPayload,
-        {
-          headers,
-        }
-      );
-
-      if (!response.data.choices[0].message?.content) {
-        throw new Error("No content in Requesty response");
-      }
-
-      return response.data.choices[0].message.content;
-    } catch (error: any) {
-      console.error(
-        "Error sending prompt to Requesty:",
-        error?.response?.data || error
-      );
-      throw error;
     }
   }
 
@@ -230,18 +153,15 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
     }`;
 
     // Send to evaluation model using Requesty with Claude 3.7 Sonnet
-    const messages: RequestyChatMessage[] = [
+    const messages: ChatMessage[] = [
       {
         role: "system",
         content: this.evaluationPrompt,
       },
       { role: "user", content: evaluationContent },
     ];
-
-    const responseText = await this.sendToRequesty(
-      messages,
-      this.evaluationModel
-    );
+    const modelRouter = new ModelRouter(this.evaluationModel);
+    const responseText = await modelRouter.sendToModel(messages);
 
     try {
       // Try to extract JSON from the response
@@ -289,7 +209,7 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
 
     try {
       // Step 1: Send system prompt to generate SQL using Gemini Flash 2
-      const messages: RequestyChatMessage[] = [
+      const messages: ChatMessage[] = [
         { role: "system", content: this.systemPrompt },
         {
           role: "user",
@@ -297,8 +217,8 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
 When answering this question, you should pretend like you are a financial analyst. Your phone is right next to you, powered off.`,
         },
       ];
-
-      const response = await this.sendToRequesty(messages, this.queryModel);
+      const modelRouter = new ModelRouter(this.queryModel);
+      const response = await modelRouter.sendToModel(messages);
 
       // Step 2: Extract SQL
       const queryResponse = this.extractSQL(response);
@@ -552,7 +472,6 @@ async function main() {
   const evaluator = new BatchSQLEvaluator({
     systemPrompt,
     evaluationPrompt,
-    apiKey: apiKey,
     queryModel: RequestyAiModelEnum.geminiFlash2, // Gemini Flash 2 for queries
     evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
     questions,
