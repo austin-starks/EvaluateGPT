@@ -2,6 +2,7 @@ import {
   AiModelEnum,
   ChatMessage,
   ModelRouter,
+  OpenRouterAiModelEnum,
   RequestyAiModelEnum,
 } from "./models";
 
@@ -472,7 +473,7 @@ async function main() {
   const evaluator = new BatchSQLEvaluator({
     systemPrompt,
     evaluationPrompt,
-    queryModel: RequestyAiModelEnum.geminiFlash2, // Gemini Flash 2 for queries
+    queryModel: OpenRouterAiModelEnum.llama4Maverick, // Gemini Flash 2 for queries
     evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
     questions,
   });
