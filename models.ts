@@ -11,6 +11,7 @@ export enum RequestyAiModelEnum {
 export enum OpenRouterAiModelEnum {
   llama4Maverick = "meta-llama/llama-4-maverick",
   geminiFlash2 = "google/gemini-2.0-flash-001",
+  gpt4o = "openai/gpt-4o",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;

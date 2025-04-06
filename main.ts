@@ -260,6 +260,7 @@ When answering this question, you should pretend like you are a financial analys
     } catch (error: any) {
       result.errorOccurred = true;
       result.errorMessage = error.message;
+      result.score = 0; // Explicitly set score to 0 for failed queries
       console.error("Error processing question:", error.message);
     }
 
@@ -270,8 +271,9 @@ When answering this question, you should pretend like you are a financial analys
   }
 
   private calculateStatistics(results: QuestionResult[]): AggregateStatistics {
+    // Include all results in statistics, not just successful ones
+    const scores = results.map((r) => r.score);
     const successfulResults = results.filter((r) => !r.errorOccurred);
-    const scores = successfulResults.map((r) => r.score);
 
     // Sort scores for median and other calculations
     const sortedScores = [...scores].sort((a, b) => a - b);
@@ -283,7 +285,7 @@ When answering this question, you should pretend like you are a financial analys
         ? (sortedScores[mid - 1] + sortedScores[mid]) / 2
         : sortedScores[mid];
 
-    // Calculate average
+    // Calculate average - include all results, including failed ones with score 0
     const sum = scores.reduce((acc, score) => acc + score, 0);
     const average = scores.length > 0 ? sum / scores.length : 0;
 
@@ -326,8 +328,10 @@ When answering this question, you should pretend like you are a financial analys
       standardDeviation,
       successRate: (successfulResults.length / results.length) * 100,
       averageExecutionTimeMs:
-        successfulResults.reduce((acc, r) => acc + r.executionTimeMs, 0) /
-        successfulResults.length,
+        successfulResults.length > 0
+          ? successfulResults.reduce((acc, r) => acc + r.executionTimeMs, 0) /
+            successfulResults.length
+          : 0,
       scoreDistribution: distribution,
     };
   }
@@ -340,9 +344,7 @@ When answering this question, you should pretend like you are a financial analys
       path: outputPath,
       header: [
         { id: "question", title: "Question" },
-        { id: "sql", title: "SQL Query" },
         { id: "score", title: "Score" },
-        { id: "explanation", title: "Explanation" },
         { id: "resultCount", title: "Result Count" },
         { id: "executionTimeMs", title: "Execution Time (ms)" },
         { id: "errorOccurred", title: "Error Occurred" },
@@ -473,8 +475,8 @@ async function main() {
   const evaluator = new BatchSQLEvaluator({
     systemPrompt,
     evaluationPrompt,
-    queryModel: OpenRouterAiModelEnum.llama4Maverick, // Gemini Flash 2 for queries
-    evaluationModel: RequestyAiModelEnum.claude37Sonnet, // Claude 3.7 Sonnet for evaluations
+    queryModel: OpenRouterAiModelEnum.gpt4o,
+    evaluationModel: RequestyAiModelEnum.claude37Sonnet,
     questions,
   });
 
