@@ -1,6 +1,6 @@
 # EvaluateGPT
 
-This tool evaluates the effectiveness of AI system prompts for generating SQL queries against a financial database. It uses Requesty to leverage Gemini Flash 2 for generating SQL queries and Claude 3.7 Sonnet for evaluating those queries.
+This tool evaluates the effectiveness of AI system prompts for generating SQL queries against a financial database. It uses Requesty or OpenRouter to leverage Gemini Flash 2 for generating SQL queries and Claude 3.7 Sonnet for evaluating those queries.
 
 ## Features
 
@@ -16,7 +16,7 @@ This tool evaluates the effectiveness of AI system prompts for generating SQL qu
 - Node.js 14+ and npm
 - TypeScript
 - BigQuery access
-- [Requesty account](https://app.requesty.ai/join?ref=e0603ee5)
+- [Requesty account](https://app.requesty.ai/join?ref=e0603ee5) or [OpenRouter account](https://openrouter.ai/)
 
 ## Installation
 
@@ -35,8 +35,12 @@ npm install axios dotenv @google-cloud/bigquery fs path csv-writer ts-node types
 
 4. Configure environment variables in a `.env` file:
 
-```
+```bash
+# If using Requesty
 REQUESTY_API_KEY=your_requesty_api_key
+# Or if using OpenRouter
+OPENROUTER_API_KEY=your_openrouter_api_key
+
 GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account","project_id":"..."}
 ```
 
@@ -121,14 +125,24 @@ Score distribution:
 ==========================================
 ```
 
-## Why Use Requesty?
+## Why Use Requesty or OpenRouter?
 
-This tool uses [Requesty](https://app.requesty.ai/join?ref=e0603ee5) for AI model access, which provides:
+This tool supports two options for AI model access:
+
+### Requesty
+
+[Requesty](https://app.requesty.ai/join?ref=e0603ee5) provides:
 
 - Simple access to multiple AI models including Gemini Flash 2 and Claude 3.7 Sonnet
 - Consistent API interface across models
 - Cost-effective pricing
-- Advanced analytics and more.
+- Advanced analytics and more
+
+### OpenRouter
+
+[OpenRouter](https://openrouter.ai/) provides:
+
+- Similar to Requesty with a wider array of models offered
 
 ## Database Schema
 
