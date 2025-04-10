@@ -7,7 +7,6 @@ import {
 } from "./models";
 
 import { BigQuery } from "@google-cloud/bigquery";
-import axios from "axios";
 import { createObjectCsvWriter } from "csv-writer";
 import dotenv from "dotenv";
 import { evaluationPrompt } from "./systemPrompts/evaluationPrompt";
@@ -475,7 +474,7 @@ async function main() {
   const evaluator = new BatchSQLEvaluator({
     systemPrompt,
     evaluationPrompt,
-    queryModel: OpenRouterAiModelEnum.gpt4o,
+    queryModel: OpenRouterAiModelEnum.optimusAlpha,
     evaluationModel: RequestyAiModelEnum.claude37Sonnet,
     questions,
   });

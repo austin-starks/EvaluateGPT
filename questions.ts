@@ -40,3 +40,11 @@ export const questions = [
   "What airline stocks are up the most year-to-date?",
   "What semiconductor stocks have at least a 20% net income increase from 2022 to 2024? Sort by market cap descending",
 ];
+
+const additionalQuestions = [
+  "What AI stocks with a 4 year consistently increasing net income have the lowest 14 day RSI?",
+  "What cloud computing stocks with a fundamental ranking between 3 and 4 have the most number of standard deviations from their 200 day average price?",
+  "What banking stocks are the most below their 7 day exponential moving average?",
+  "What semiconductor stocks have the highest 7 day increase in market cap in 2022?",
+  "What AI stocks other than the MAG7 have the highest net income increase from 2022 to 2024?",
+];

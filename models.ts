@@ -1,17 +1,29 @@
 import axios, { AxiosError } from "axios";
 
+const getTemperature = (model: AiModelEnum): number => {
+  if (model === RequestyAiModelEnum.o3Mini) {
+    return 1;
+  }
+  return 0;
+};
+
 // Enum definitions based on the provided code
 export enum RequestyAiModelEnum {
   claude37Sonnet = "anthropic/claude-3-7-sonnet-latest",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   deepSeekV3 = "nebius/deepseek-ai/DeepSeek-V3-0324",
   gemini25Pro = "google/gemini-2.5-pro-exp-03-25",
+  grok3Mini = "xai/grok-3-mini-beta",
+  grok3 = "xai/grok-3-beta",
+  o3Mini = "openai/o3-mini",
 }
 
 export enum OpenRouterAiModelEnum {
   llama4Maverick = "meta-llama/llama-4-maverick",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   gpt4o = "openai/gpt-4o",
+  quasarAlpha = "openrouter/quasar-alpha",
+  optimusAlpha = "openrouter/optimus-alpha",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;
@@ -26,7 +38,6 @@ export interface RetryOptions {
   initialDelayMs: number;
   maxDelayMs: number;
   backoffFactor: number;
-  retryableStatusCodes: number[];
 }
 
 export class ModelRouter {
@@ -42,10 +53,9 @@ export class ModelRouter {
     // Default retry options with sensible defaults
     this.retryOptions = {
       maxRetries: 3,
-      initialDelayMs: 1000,
+      initialDelayMs: 4000,
       maxDelayMs: 30000,
       backoffFactor: 2,
-      retryableStatusCodes: [408, 429, 500, 502, 503, 504],
       ...retryOptions,
     };
   }
@@ -87,11 +97,7 @@ export class ModelRouter {
         const statusCode = axiosError.response?.status;
 
         // Check if we've exceeded max retries or if the error is not retryable
-        if (
-          retryCount >= this.retryOptions.maxRetries ||
-          (statusCode &&
-            !this.retryOptions.retryableStatusCodes.includes(statusCode))
-        ) {
+        if (retryCount >= this.retryOptions.maxRetries) {
           // Log and rethrow for non-retryable errors or max retries reached
           console.error(
             `Failed after ${retryCount} retries:`,
@@ -129,7 +135,7 @@ export class ModelRouter {
       const requestPayload = {
         model,
         messages,
-        temperature: 0,
+        temperature: getTemperature(model),
         requesty: {
           user_id: "EvaluateGPT",
           extra: {
@@ -177,7 +183,7 @@ export class ModelRouter {
       const requestPayload = {
         model,
         messages,
-        temperature: 0,
+        temperature: getTemperature(model),
         user: "EvaluateGPT",
       };
 
