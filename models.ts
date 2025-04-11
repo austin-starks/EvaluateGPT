@@ -24,6 +24,7 @@ export enum OpenRouterAiModelEnum {
   gpt4o = "openai/gpt-4o",
   quasarAlpha = "openrouter/quasar-alpha",
   optimusAlpha = "openrouter/optimus-alpha",
+  gemini25Pro = "google/gemini-2.5-pro-preview-03-25",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;

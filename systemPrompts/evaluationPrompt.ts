@@ -425,4 +425,13 @@ TypeScript Interface:
 interface Evaluator {
   explanation: string;
   value: number;
-}`;
+}
+
+REMEMBER: You MUST respond with JSON. It has to be in the schema provided. 
+\`\`\`json
+{
+  "explanation": "The query is correct",
+  "value": 1
+}
+\`\`\`
+`;

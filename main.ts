@@ -474,7 +474,7 @@ async function main() {
   const evaluator = new BatchSQLEvaluator({
     systemPrompt,
     evaluationPrompt,
-    queryModel: OpenRouterAiModelEnum.optimusAlpha,
+    queryModel: OpenRouterAiModelEnum.gemini25Pro,
     evaluationModel: RequestyAiModelEnum.claude37Sonnet,
     questions,
   });
