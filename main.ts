@@ -521,9 +521,14 @@ async function main() {
     OpenRouterAiModelEnum.gemini25Pro,
   ];
 
-  // Process each query model
-  for (const queryModel of queryModels) {
-    console.log(`\n\n========== TESTING QUERY MODEL: ${queryModel} ==========`);
+  console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");
+  console.log(
+    `Testing ${queryModels.length} query models with ${evaluationModels.length} evaluation models`
+  );
+
+  // Process all query models in parallel
+  const evaluatorPromises = queryModels.map(async (queryModel) => {
+    console.log(`\nStarting evaluation for model: ${queryModel}`);
 
     // Create and run the batch evaluator
     const evaluator = new BatchSQLEvaluator({
@@ -535,14 +540,56 @@ async function main() {
     });
 
     try {
-      await evaluator.runBatch("./output");
+      const result = await evaluator.runBatch("./output");
+      console.log(`Completed evaluation for model: ${queryModel}`);
+      return { model: queryModel, result };
     } catch (error) {
       console.error(
         `Error running batch SQL evaluator for model ${queryModel}:`,
         error
       );
+      return { model: queryModel, error };
     }
+  });
+
+  // Wait for all evaluations to complete
+  const results = await Promise.all(evaluatorPromises);
+
+  // Print summary of all results
+  console.log("\n========== FINAL EVALUATION SUMMARY ==========");
+
+  // Filter successful and failed evaluations
+  const successfulResults = results.filter((r) => !r.error);
+  const failedResults = results.filter((r) => r.error);
+
+  console.log(
+    `\nSuccessful evaluations: ${successfulResults.length}/${results.length}`
+  );
+  console.log(`Failed evaluations: ${failedResults.length}/${results.length}`);
+
+  if (failedResults.length > 0) {
+    console.log("\nFailed models:");
+    failedResults.forEach(({ model, error }) => {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.log(`- ${model}: ${errorMessage}`);
+    });
   }
+
+  // Sort successful results by average score
+  const sortedResults = [...successfulResults].sort(
+    (a, b) =>
+      b.result.statistics.averageScore - a.result.statistics.averageScore
+  );
+
+  console.log("\nModel Rankings (by average score):");
+  sortedResults.forEach(({ model, result }, index) => {
+    console.log(
+      `${index + 1}. ${model}: ${result.statistics.averageScore.toFixed(3)}`
+    );
+  });
+
+  console.log("\n========== EVALUATION COMPLETE ==========");
 }
 
 (async () => {
