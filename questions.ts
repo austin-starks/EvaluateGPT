@@ -39,12 +39,17 @@ export const questions = [
   "What consumer goods stocks with a net income above $10 billion had the highest percent drop in the past 2 months?",
   "What airline stocks are up the most year-to-date?",
   "What semiconductor stocks have at least a 20% net income increase from 2022 to 2024? Sort by market cap descending",
-];
-
-const additionalQuestions = [
   "What AI stocks with a 4 year consistently increasing net income have the lowest 14 day RSI?",
   "What cloud computing stocks with a fundamental ranking between 3 and 4 have the most number of standard deviations from their 200 day average price?",
   "What banking stocks are the most below their 7 day exponential moving average?",
   "What semiconductor stocks have the highest 7 day increase in market cap in 2022?",
   "What AI stocks other than the MAG7 have the highest net income increase from 2022 to 2024?",
+  "What stocks are the most number of standard deviations from their 200 day average price?",
+  "What AI stocks are between 1 and 2 standard deviations from their 20 day average price in either direction?",
+  "What quantum computing stocks have the highest drawdown in the past 2 weeks?",
+  "What crypto stocks have the highest 7 day increase in market cap in 2022?",
+  "What cryptocurrencies have the largest 1-day gain in the past 2 weeks?",
+  "What is the average gain, market cap, P/E ratio, and revenue of the cryptoucrrency industry?",
+  "What AI stocks have the highest revenue difference between the average AI revenue and their own revenue?",
+  "What biology related stocks have the highest revenue difference between the average biology related free cash flow and their own free cash flow in 2023?",
 ];

@@ -27,6 +27,7 @@ interface QueryResponse {
 interface EvaluationResult {
   value: number;
   explanation: string;
+  model: AiModelEnum;
 }
 
 interface QuestionResult {
@@ -61,7 +62,7 @@ class BatchSQLEvaluator {
   private systemPrompt: string;
   private evaluationPrompt: string;
   private queryModel: AiModelEnum;
-  private evaluationModel: AiModelEnum;
+  private evaluationModels: AiModelEnum[];
   private bigquery: BigQuery;
   private questions: string[];
   private results: QuestionResult[] = [];
@@ -70,19 +71,19 @@ class BatchSQLEvaluator {
     systemPrompt,
     evaluationPrompt,
     queryModel,
-    evaluationModel,
+    evaluationModels,
     questions,
   }: {
     systemPrompt: string;
     evaluationPrompt: string;
     queryModel: AiModelEnum;
-    evaluationModel: AiModelEnum;
+    evaluationModels: AiModelEnum[];
     questions: string[];
   }) {
     this.systemPrompt = systemPrompt;
     this.evaluationPrompt = evaluationPrompt;
     this.queryModel = queryModel;
-    this.evaluationModel = evaluationModel;
+    this.evaluationModels = evaluationModels;
     this.questions = questions;
 
     // Initialize BigQuery with credentials from environment variable
@@ -152,44 +153,75 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
       results.length > 10 ? `\n\n...and ${results.length - 10} more rows` : ""
     }`;
 
-    // Send to evaluation model using Requesty with Claude 3.7 Sonnet
-    const messages: ChatMessage[] = [
-      {
-        role: "system",
-        content: this.evaluationPrompt,
-      },
-      { role: "user", content: evaluationContent },
-    ];
-    const modelRouter = new ModelRouter(this.evaluationModel);
-    const responseText = await modelRouter.sendToModel(messages);
+    // Get evaluations from all models
+    const evaluations: EvaluationResult[] = [];
 
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch =
-        responseText.match(/```json\n([\s\S]*?)\n```/) ||
-        responseText.match(/{[\s\S]*?}/);
+    for (const model of this.evaluationModels) {
+      // Send to evaluation model
+      const messages: ChatMessage[] = [
+        {
+          role: "system",
+          content: this.evaluationPrompt,
+        },
+        { role: "user", content: evaluationContent },
+      ];
+      const modelRouter = new ModelRouter(model);
+      const responseText = await modelRouter.sendToModel(messages);
 
-      let jsonText = jsonMatch ? jsonMatch[1] || jsonMatch[0] : responseText;
+      try {
+        // Try to extract JSON from the response
+        const jsonMatch =
+          responseText.match(/```json\n([\s\S]*?)\n```/) ||
+          responseText.match(/{[\s\S]*?}/);
 
-      // Clean up the JSON if necessary
-      if (!jsonText.startsWith("{")) {
-        jsonText = "{" + jsonText.split("{").slice(1).join("{");
-      }
+        let jsonText = jsonMatch ? jsonMatch[1] || jsonMatch[0] : responseText;
 
-      const evaluationResult = JSON.parse(jsonText) as EvaluationResult;
+        // Clean up the JSON if necessary
+        if (!jsonText.startsWith("{")) {
+          jsonText = "{" + jsonText.split("{").slice(1).join("{");
+        }
 
-      if (typeof evaluationResult.value !== "number") {
-        throw new Error(
-          'Evaluation result does not contain a numeric "value" field'
+        const evaluationResult = JSON.parse(jsonText) as EvaluationResult;
+        evaluationResult.model = model;
+
+        if (typeof evaluationResult.value !== "number") {
+          throw new Error(
+            'Evaluation result does not contain a numeric "value" field'
+          );
+        }
+
+        evaluations.push(evaluationResult);
+      } catch (error) {
+        console.error(
+          `Error parsing evaluation result from model ${model}:`,
+          error
         );
+        console.error("Raw response:", responseText);
+        evaluations.push({
+          value: 0,
+          explanation: "Failed to parse evaluation result",
+          model,
+        });
       }
-
-      return evaluationResult;
-    } catch (error) {
-      console.error("Error parsing evaluation result:", error);
-      console.error("Raw response:", responseText);
-      return { value: 0, explanation: "Failed to parse evaluation result" };
     }
+
+    // Calculate average evaluation
+    const totalValue = evaluations.reduce(
+      (sum, evaluation) => sum + evaluation.value,
+      0
+    );
+    const averageValue = totalValue / evaluations.length;
+
+    // Combine explanations from all models
+    const combinedExplanation = evaluations
+      .map((evaluation) => `[${evaluation.model}]: ${evaluation.explanation}`)
+      .join("\n\n");
+
+    return {
+      value: averageValue,
+      explanation: combinedExplanation,
+      model: this.evaluationModels[0],
+    };
   }
 
   private async processQuestion(question: string): Promise<QuestionResult> {
@@ -375,10 +407,9 @@ When answering this question, you should pretend like you are a financial analys
 
     // Export results
     const timestamp = new Date().toISOString().replace(/:/g, "-");
-    const modelInfo = `${this.queryModel}_${this.evaluationModel}`.replace(
-      /\//g,
+    const modelInfo = `${this.queryModel}_${this.evaluationModels.join(
       "_"
-    );
+    )}`.replace(/\//g, "_");
     const resultsPath = path.join(
       outputDir,
       `results_${modelInfo}_${timestamp}.csv`
@@ -396,7 +427,7 @@ When answering this question, you should pretend like you are a financial analys
           ...statistics,
           models: {
             queryModel: this.queryModel,
-            evaluationModel: this.evaluationModel,
+            evaluationModels: this.evaluationModels,
           },
           prompts: {
             systemPrompt: this.systemPrompt,
@@ -411,7 +442,7 @@ When answering this question, you should pretend like you are a financial analys
     // Print summary
     console.log("\n========== EVALUATION SUMMARY ==========");
     console.log(`Query Model: ${this.queryModel}`);
-    console.log(`Evaluation Model: ${this.evaluationModel}`);
+    console.log(`Evaluation Models: ${this.evaluationModels.join(", ")}`);
     console.log("\nSystem Prompts:");
     console.log("Query System Prompt:");
     console.log(this.systemPrompt);
@@ -470,19 +501,47 @@ async function main() {
   if (!apiKey) {
     throw new Error("REQUESTY_API_KEY environment variable is not set");
   }
-  // Create and run the batch evaluator
-  const evaluator = new BatchSQLEvaluator({
-    systemPrompt,
-    evaluationPrompt,
-    queryModel: OpenRouterAiModelEnum.gemini25Pro,
-    evaluationModel: RequestyAiModelEnum.claude37Sonnet,
-    questions,
-  });
 
-  try {
-    await evaluator.runBatch("./output");
-  } catch (error) {
-    console.error("Error running batch SQL evaluator:", error);
+  // Define the models to test
+  const queryModels = [
+    OpenRouterAiModelEnum.geminiFlash2,
+    OpenRouterAiModelEnum.gemini25Pro,
+    OpenRouterAiModelEnum.llama4Maverick,
+    RequestyAiModelEnum.claude37Sonnet,
+    OpenRouterAiModelEnum.claude37SonnetThinking,
+    RequestyAiModelEnum.grok3Mini,
+    RequestyAiModelEnum.grok3,
+    RequestyAiModelEnum.o3Mini,
+    OpenRouterAiModelEnum.optimusAlpha,
+  ];
+
+  // Define the evaluation models
+  const evaluationModels = [
+    RequestyAiModelEnum.claude37Sonnet,
+    OpenRouterAiModelEnum.gemini25Pro,
+  ];
+
+  // Process each query model
+  for (const queryModel of queryModels) {
+    console.log(`\n\n========== TESTING QUERY MODEL: ${queryModel} ==========`);
+
+    // Create and run the batch evaluator
+    const evaluator = new BatchSQLEvaluator({
+      systemPrompt,
+      evaluationPrompt,
+      queryModel,
+      evaluationModels,
+      questions,
+    });
+
+    try {
+      await evaluator.runBatch("./output");
+    } catch (error) {
+      console.error(
+        `Error running batch SQL evaluator for model ${queryModel}:`,
+        error
+      );
+    }
   }
 }
 
