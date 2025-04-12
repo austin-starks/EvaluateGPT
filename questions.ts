@@ -52,4 +52,11 @@ export const questions = [
   "What is the average gain, market cap, P/E ratio, and revenue of the cryptoucrrency industry?",
   "What AI stocks have the highest revenue difference between the average AI revenue and their own revenue?",
   "What biology related stocks have the highest revenue difference between the average biology related free cash flow and their own free cash flow in 2023?",
+  "Which stocks have RSI's that are the most significantly different from the average RSI of the S&P 500?",
+  "Which stocks have RSI's that are the most significantly different from their 30 day average RSI?",
+  "What stocks have increased their revenue every quarter for the past 4 quarters?",
+  "What stocks have increased their net income every year for the past 4 years?",
+  "What stocks have increased their free cash flow every quarter for the past 4 quarters and every year for the past 4 years and have a market cap between $10 and $250 billion?",
+  "What is the correlation between net income change and price change? Group by 2022, 2023, 2024, and all together.",
+  "What is the correlation between SPY's return and Bitcoin's return in the past 2 weeks? 2 months? 2 years? 5 years?",
 ];
