@@ -16,6 +16,9 @@ export enum RequestyAiModelEnum {
   grok3Mini = "xai/grok-3-mini-beta",
   grok3 = "xai/grok-3-beta",
   o3Mini = "openai/o3-mini",
+  gpt4One = "openai/gpt-4.1-2025-04-14",
+  gpt4OneMini = "openai/gpt-4.1-mini-2025-04-14",
+  gpt4OneNano = "openai/gpt-4.1-nano-2025-04-14",
 }
 
 export enum OpenRouterAiModelEnum {
