@@ -25,8 +25,6 @@ export enum OpenRouterAiModelEnum {
   llama4Maverick = "meta-llama/llama-4-maverick",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   gpt4o = "openai/gpt-4o",
-  quasarAlpha = "openrouter/quasar-alpha",
-  optimusAlpha = "openrouter/optimus-alpha",
   gemini25Pro = "google/gemini-2.5-pro-preview-03-25",
   claude37SonnetThinking = "anthropic/claude-3.7-sonnet:thinking",
 }
