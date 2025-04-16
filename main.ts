@@ -47,7 +47,7 @@ interface AggregateStatistics {
   minScore: number;
   maxScore: number;
   standardDeviation: number;
-  successRate: number;
+  executionSuccessRate: number;
   averageExecutionTimeMs: number;
   scoreDistribution: {
     "0.0-0.2": number;
@@ -425,7 +425,7 @@ When answering this question, you should pretend like you are a financial analys
       minScore: sortedScores[0] || 0,
       maxScore: sortedScores[sortedScores.length - 1] || 0,
       standardDeviation,
-      successRate: (successfulResults.length / results.length) * 100,
+      executionSuccessRate: (successfulResults.length / results.length) * 100,
       averageExecutionTimeMs:
         successfulResults.length > 0
           ? successfulResults.reduce((acc, r) => acc + r.executionTimeMs, 0) /
@@ -530,7 +530,7 @@ When answering this question, you should pretend like you are a financial analys
     console.log(
       `Standard deviation: ${statistics.standardDeviation.toFixed(2)}`
     );
-    console.log(`Success rate: ${statistics.successRate.toFixed(2)}%`);
+    console.log(`Success rate: ${statistics.executionSuccessRate.toFixed(2)}%`);
     console.log(
       `Average execution time: ${statistics.averageExecutionTimeMs.toFixed(
         2
@@ -585,6 +585,8 @@ async function main() {
     RequestyAiModelEnum.o3Mini,
     RequestyAiModelEnum.o3,
     RequestyAiModelEnum.o4Mini,
+    RequestyAiModelEnum.o4MiniLow,
+    RequestyAiModelEnum.o4MiniHigh,
   ];
 
   // Define the evaluation models

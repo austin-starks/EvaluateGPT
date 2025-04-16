@@ -26,6 +26,8 @@ export enum RequestyAiModelEnum {
   gpt4OneNano = "openai/gpt-4.1-nano-2025-04-14",
   o3 = "openai/o3-2025-04-16",
   o4Mini = "openai/o4-mini-2025-04-16",
+  o4MiniLow = "openai/o4-mini:low",
+  o4MiniHigh = "openai/o4-mini:high",
 }
 
 export enum OpenRouterAiModelEnum {
