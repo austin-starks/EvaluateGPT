@@ -105,6 +105,75 @@ class BatchSQLEvaluator {
     }
   }
 
+  /**
+   * Helper function to parse JSON from a model response
+   * @param responseText The raw text response from the model
+   * @returns Parsed JSON object
+   */
+  private parseModelResponse(responseText: string): any {
+    // Try to extract JSON from the response
+    const jsonMatch =
+      responseText.match(/```json\n([\s\S]*?)\n```/) ||
+      responseText.match(/{[\s\S]*?}/);
+
+    let jsonText = jsonMatch ? jsonMatch[1] || jsonMatch[0] : responseText;
+
+    // Clean up the JSON if necessary
+    if (!jsonText.startsWith("{")) {
+      jsonText = "{" + jsonText.split("{").slice(1).join("{");
+    }
+
+    return JSON.parse(jsonText);
+  }
+
+  /**
+   * Helper function to retry an operation with exponential backoff
+   * @param operation The async operation to retry
+   * @param maxRetries Maximum number of retry attempts
+   * @param operationName Name of the operation for logging
+   * @returns Result of the operation
+   */
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    operationName: string = "operation"
+  ): Promise<T> {
+    let retryCount = 0;
+    let lastError: any = null;
+
+    while (retryCount < maxRetries) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        retryCount++;
+        console.error(
+          `Error in ${operationName} (attempt ${retryCount}/${maxRetries}):`,
+          error
+        );
+
+        if (retryCount < maxRetries) {
+          console.log(`Retrying ${operationName}...`);
+          // Add a small delay between retries to avoid rate limiting
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * retryCount)
+          );
+        } else {
+          console.error(
+            `Failed to complete ${operationName} after ${maxRetries} attempts. Last error:`,
+            lastError
+          );
+          throw new Error(
+            `Failed to complete ${operationName} after ${maxRetries} attempts`
+          );
+        }
+      }
+    }
+
+    // This should never be reached due to the throw in the catch block
+    throw lastError;
+  }
+
   private extractSQL(content: string): QueryResponse {
     // Check for both ```sql and plain ``` code blocks
     const sqlMatch = content.match(/```(?:sql)?\n([\s\S]*?)```/);
@@ -157,52 +226,51 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
     const evaluations: EvaluationResult[] = [];
 
     for (const model of this.evaluationModels) {
-      // Send to evaluation model
-      const messages: ChatMessage[] = [
-        {
-          role: "system",
-          content: this.evaluationPrompt,
-        },
-        { role: "user", content: evaluationContent },
-      ];
-      const modelRouter = new ModelRouter(model);
-      const responseText = await modelRouter.sendToModel(messages);
-
       try {
-        // Try to extract JSON from the response
-        const jsonMatch =
-          responseText.match(/```json\n([\s\S]*?)\n```/) ||
-          responseText.match(/{[\s\S]*?}/);
+        // Use the retry helper for the entire evaluation process
+        const evaluationResult = await this.retryWithBackoff(
+          async () => {
+            // Send to evaluation model
+            const messages: ChatMessage[] = [
+              {
+                role: "system",
+                content: this.evaluationPrompt,
+              },
+              { role: "user", content: evaluationContent },
+            ];
+            const modelRouter = new ModelRouter(model);
+            const responseText = await modelRouter.sendToModel(messages);
 
-        let jsonText = jsonMatch ? jsonMatch[1] || jsonMatch[0] : responseText;
+            // Parse the response using the helper function
+            const parsedResult = this.parseModelResponse(
+              responseText
+            ) as EvaluationResult;
+            parsedResult.model = model;
 
-        // Clean up the JSON if necessary
-        if (!jsonText.startsWith("{")) {
-          jsonText = "{" + jsonText.split("{").slice(1).join("{");
-        }
+            if (typeof parsedResult.value !== "number") {
+              throw new Error(
+                'Evaluation result does not contain a numeric "value" field'
+              );
+            }
 
-        const evaluationResult = JSON.parse(jsonText) as EvaluationResult;
-        evaluationResult.model = model;
-
-        if (typeof evaluationResult.value !== "number") {
-          throw new Error(
-            'Evaluation result does not contain a numeric "value" field'
-          );
-        }
+            return parsedResult;
+          },
+          3,
+          `evaluation with model ${model}`
+        );
 
         evaluations.push(evaluationResult);
       } catch (error) {
         console.error(
-          `Error parsing evaluation result from model ${model}:`,
+          `Failed to evaluate with model ${model} after all retries:`,
           error
         );
-        console.error("Raw response:", responseText);
-        evaluations.push({
-          value: 0,
-          explanation: "Failed to parse evaluation result",
-          model,
-        });
       }
+    }
+
+    // If no evaluations were successful, throw an error
+    if (evaluations.length === 0) {
+      throw new Error("All evaluation attempts failed for all models");
     }
 
     // Calculate average evaluation
@@ -504,23 +572,26 @@ async function main() {
 
   // Define the models to test
   const queryModels = [
-    // OpenRouterAiModelEnum.geminiFlash2,
-    // OpenRouterAiModelEnum.gemini25Pro,
-    // OpenRouterAiModelEnum.llama4Maverick,
-    // RequestyAiModelEnum.claude37Sonnet,
-    // OpenRouterAiModelEnum.claude37SonnetThinking,
-    // RequestyAiModelEnum.grok3Mini,
-    // RequestyAiModelEnum.grok3,
-    // RequestyAiModelEnum.gpt4One,
+    OpenRouterAiModelEnum.geminiFlash2,
+    OpenRouterAiModelEnum.gemini25Pro,
+    OpenRouterAiModelEnum.llama4Maverick,
+    RequestyAiModelEnum.claude37Sonnet,
+    OpenRouterAiModelEnum.claude37SonnetThinking,
+    RequestyAiModelEnum.grok3Mini,
+    RequestyAiModelEnum.grok3,
+    RequestyAiModelEnum.gpt4One,
     RequestyAiModelEnum.gpt4OneNano,
     RequestyAiModelEnum.gpt4OneMini,
-    // RequestyAiModelEnum.o3Mini,
+    RequestyAiModelEnum.o3Mini,
+    RequestyAiModelEnum.o3,
+    RequestyAiModelEnum.o4Mini,
   ];
 
   // Define the evaluation models
   const evaluationModels = [
     RequestyAiModelEnum.claude37Sonnet,
     OpenRouterAiModelEnum.gemini25Pro,
+    RequestyAiModelEnum.gpt4One,
   ];
 
   console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");
