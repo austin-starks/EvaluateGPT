@@ -774,7 +774,6 @@ async function main() {
   const queryModels = [
     RequestyAiModelEnum.gpt4One,
     RequestyAiModelEnum.o4Mini,
-    OpenRouterAiModelEnum.o3,
     OpenRouterAiModelEnum.gemini25FlashMay,
     OpenRouterAiModelEnum.geminiFlash2,
     OpenRouterAiModelEnum.gemini25Pro,
