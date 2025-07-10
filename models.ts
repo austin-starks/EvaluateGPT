@@ -2,7 +2,7 @@ import axios, { AxiosError } from "axios";
 
 const getTemperature = (model: AiModelEnum): number => {
   const modelsWhereTemperatureIs1 = [
-    RequestyAiModelEnum.o3,
+    OpenRouterAiModelEnum.o3,
     RequestyAiModelEnum.o3Mini,
     RequestyAiModelEnum.o4Mini,
   ];
@@ -26,7 +26,6 @@ export enum RequestyAiModelEnum {
   gpt4One = "openai/gpt-4.1-2025-04-14",
   gpt4OneMini = "openai/gpt-4.1-mini-2025-04-14",
   gpt4OneNano = "openai/gpt-4.1-nano-2025-04-14",
-  o3 = "openai/o3-2025-04-16",
   o4Mini = "openai/o4-mini-2025-04-16",
   o4MiniLow = "openai/o4-mini:low",
   o4MiniHigh = "openai/o4-mini:high",
@@ -45,6 +44,7 @@ export enum OpenRouterAiModelEnum {
   claude37SonnetThinking = "anthropic/claude-3.7-sonnet:thinking",
   deepseekProverV2 = "deepseek/deepseek-prover-v2",
   grok4 = "x-ai/grok-4-07-09",
+  o3 = "openai/o3-2025-04-16",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;
