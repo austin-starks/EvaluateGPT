@@ -772,16 +772,17 @@ async function main() {
 
   // Define the models to test
   const queryModels = [
-    RequestyAiModelEnum.gpt4One,
-    RequestyAiModelEnum.o4Mini,
-    OpenRouterAiModelEnum.gemini25FlashMay,
-    OpenRouterAiModelEnum.geminiFlash2,
-    OpenRouterAiModelEnum.gemini25Pro,
-    OpenRouterAiModelEnum.grok4,
-    RequestyAiModelEnum.grok3,
-    RequestyAiModelEnum.claudeOpus4,
-    RequestyAiModelEnum.claude37Sonnet,
-    RequestyAiModelEnum.claudeSonnet4,
+    OpenRouterAiModelEnum.o3,
+    // RequestyAiModelEnum.gpt4One,
+    // RequestyAiModelEnum.o4Mini,
+    // OpenRouterAiModelEnum.gemini25FlashMay,
+    // OpenRouterAiModelEnum.geminiFlash2,
+    // OpenRouterAiModelEnum.gemini25Pro,
+    // OpenRouterAiModelEnum.grok4,
+    // RequestyAiModelEnum.grok3,
+    // RequestyAiModelEnum.claudeOpus4,
+    // RequestyAiModelEnum.claude37Sonnet,
+    // RequestyAiModelEnum.claudeSonnet4,
   ];
 
   // Define the evaluation models
