@@ -1,12 +1,7 @@
-export const systemPrompt = `Today is ${new Date().toLocaleDateString("en-US", {
-  weekday: "long",
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-})} (EST)
+export const systemPrompt = `Today is ${new Date().toLocaleDateString()}
 
 #Examples
-    **NOTE: DO NOT USE THE EXAMPLES IN YOUR RESPONSE. THEY ARE FOR CONTEXT ONLY. THE DATA IN THE EXAMPLES IS INACCURATE.**
+    **NOTE: DO NOT USE THE EXAMPLES IN YOUR RESPONSE. THEY ARE FOR CONTEXT ONLY. THE DATA IN THE EXAMPLES IS INACCURATE AND IS SHOWN FOR SYNTACTIC VALIDITY.**
     
 <StartExamples>
 User:
@@ -145,145 +140,959 @@ LIMIT 25
 ====================================================
 
 User:
-Get 10 random stocks with a ranking of 4.5+, 10 random stocks with a ranking of 4 to 4.49, and 10 with a ranking of 3 to 3.99
+what tech stocks were great before 2021 and suck now?
 User:
-SYSTEM HINT: Random means truly random. You MUST use  RAND(). There should be 30 results (max) in total
+SYSTEM HINT: Great can be intrepreted as having a rating of 3.5+ and suck can be interpreted as rating of 2-. We can use \`nexustrade-io.universalstockfundamentals.reports\` to find approximations of stocks fundamental performance. Tech stocks have an industry of "technology"
+
+Remember, we don't use MAX(Year); to find stocks that suck now, look at the last available data for all stocks
 AI Assistant:
 \`\`\`sql
--- This query retrieves 30 stocks in total, divided into three rating categories:
--- 1. 10 random stocks with a rating of 4.5 or higher
--- 2. 10 random stocks with a rating between 4.0 and 4.49
--- 3. 10 random stocks with a rating between 3.0 and 3.99
+-- The goal of this query is to find tech stocks (from the stockindustries table where technology = TRUE)
+-- that had at least one "great" report (rating >= 3.5) in a fiscal year before 2021,
+-- but whose most recent report shows a "suck" rating (rating <= 2).
+-- We achieve this in three steps:
 --
--- We use CTEs to find the most recent report for each ticker in each rating category,
--- then randomize the selection and limit to 10 stocks per category.
--- The results are combined using UNION ALL.
-
-WITH HighRatedStocks AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
- FROM
- \`nexustrade-io.universalstockfundamentals.reports\`
- WHERE
- rating >= 4.5
+-- 1. TechStocks CTE: Retrieve all tickers categorized as technology stocks.
+-- 2. GreatHistorical CTE: For each tech stock, select the single historical report (from before 2021)
+--    where the rating was at least 3.5. We pick the best report per ticker (highest rating, then most recent fiscal year and period)
+-- 3. LatestReport CTE: For each tech stock, select the latest available report (using fiscalYear and fiscalPeriod)
+--    and filter those with a rating of 2 or less.
+--
+-- Finally, we join the two CTEs on ticker so that only the stocks with a "great" historical report and a "suck" current report are returned.
+-- We use grouping and window functions to ensure that each ticker appears only once.
+--
+WITH TechStocks AS (
+  SELECT DISTINCT ticker
+  FROM \`nexustrade-io.stockindustries.current\`
+  WHERE technology = TRUE
 ),
-MediumHighRatedStocks AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
- FROM
- \`nexustrade-io.universalstockfundamentals.reports\`
- WHERE
- rating >= 4.0 AND rating < 4.5
+GreatHistorical AS (
+  -- Select one historical report per ticker (fiscalYear < 2021 with rating >= 3.5)
+  SELECT ticker, fiscalYear, fiscalPeriod, rating
+  FROM (
+    SELECT 
+      ticker,
+      fiscalYear,
+      fiscalPeriod,
+      rating,
+      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY rating DESC, fiscalYear DESC, fiscalPeriod DESC) AS rn
+    FROM \`nexustrade-io.universalstockfundamentals.reports\`
+    WHERE ticker IN (SELECT ticker FROM TechStocks)
+      AND fiscalYear < 2021
+      AND rating >= 3.5
+  )
+  WHERE rn = 1
 ),
-MediumRatedStocks AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
- FROM
- \`nexustrade-io.universalstockfundamentals.reports\`
- WHERE
- rating >= 3.0 AND rating < 4.0
-),
-HighRandom AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- 'High (4.5+)' AS rating_category
- FROM
- HighRatedStocks
- WHERE
- rn = 1
- ORDER BY
- RAND()
- LIMIT 10
-),
-MediumHighRandom AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- 'Medium-High (4.0-4.49)' AS rating_category
- FROM
- MediumHighRatedStocks
- WHERE
- rn = 1
- ORDER BY
- RAND()
- LIMIT 10
-),
-MediumRandom AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- 'Medium (3.0-3.99)' AS rating_category
- FROM
- MediumRatedStocks
- WHERE
- rn = 1
- ORDER BY
- RAND()
- LIMIT 10
+LatestReport AS (
+  -- Select the latest available report per ticker (using fiscalYear and fiscalPeriod ordering)
+  SELECT ticker, fiscalYear AS currentFiscalYear, fiscalPeriod AS currentFiscalPeriod, rating AS currentRating
+  FROM (
+    SELECT 
+      ticker,
+      fiscalYear,
+      fiscalPeriod,
+      rating,
+      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
+    FROM \`nexustrade-io.universalstockfundamentals.reports\`
+    WHERE ticker IN (SELECT ticker FROM TechStocks)
+  )
+  WHERE rn = 1
+    AND rating <= 2
 )
-SELECT * FROM HighRandom
-UNION ALL
-SELECT * FROM MediumHighRandom
-UNION ALL
-SELECT * FROM MediumRandom
+-- Join the two CTEs on ticker to get those stocks that were great historically but now suck.
+SELECT
+  lr.ticker,
+  lr.currentFiscalYear,
+  lr.currentFiscalPeriod,
+  lr.currentRating,
+  gh.fiscalYear AS historicalFiscalYear,
+  gh.fiscalPeriod AS historicalFiscalPeriod,
+  gh.rating AS historicalRating
+FROM LatestReport lr
+JOIN GreatHistorical gh ON lr.ticker = gh.ticker
+ORDER BY lr.currentRating ASC
+LIMIT 25
 \`\`\`
 User:
-Get 30 random stocks with a ranking of 3
+what are the worse stocks in the market with a market cap above $100 billion
+User:
+SYSTEM HINT: Look at all CURRENT stocks with the market cap and sort by rating
 AI Assistant:
 \`\`\`sql
--- This query retrieves 30 random stocks that have a rating of exactly 3.0.
--- We first identify the latest report for each ticker with a rating of 3.0,
--- then randomly select 30 of these stocks.
+-- This query identifies stocks with a market capitalization above $100 billion (i.e. > 100,000,000,000)
+-- and then joins with the latest available fundamental reports to sort the stocks by their rating
+-- in ascending order (i.e. the lower the rating, the "worse" the stock).
 --
--- The approach:
--- 1. Filter the reports table for entries with a rating of exactly 3.0
--- 2. For each ticker, select only the most recent report (using fiscalYear and fiscalPeriod)
--- 3. Randomize the results using RAND()
--- 4. Limit to 30 stocks
-
-WITH RatedStocks AS (
- SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
- FROM
- \`nexustrade-io.universalstockfundamentals.reports\`
- WHERE
- rating = 3.0
+-- Step 1: LatestDate CTE retrieves the most recent date from the price_data table.
+-- Step 2: LatestPrice CTE selects stocks from the universalstockfundamentals.price_data table as of that date,
+-- filtering for those with marketCap > $100B.
+-- Step 3: LatestReport CTE selects the most recent fundamental report for each stock from the reports table,
+-- using fiscalYear and fiscalPeriod to determine the latest report.
+-- Finally, we join LatestPrice with LatestReport on ticker, ensuring that each ticker appears only once.
+--
+-- Note: We convert the timestamp in the price_data table to a date for comparison.
+WITH LatestDate AS (
+  SELECT
+    DATE(MAX(date)) AS latest_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\`
+),
+LatestPrice AS (
+  SELECT
+    ticker,
+    marketCap,
+    DATE(date) AS price_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\`
+  WHERE
+    DATE(date) = (SELECT latest_date FROM LatestDate)
+    AND marketCap > 100000000000
+),
+LatestReport AS (
+  SELECT
+    ticker,
+    rating,
+    fiscalYear,
+    fiscalPeriod
+  FROM (
+    SELECT
+      ticker,
+      rating,
+      fiscalYear,
+      fiscalPeriod,
+      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
+    FROM
+      \`nexustrade-io.universalstockfundamentals.reports\`
+  )
+  WHERE rn = 1
 )
 SELECT
- ticker,
- fiscalYear,
- fiscalPeriod,
- rating
+  lp.ticker,
+  lp.marketCap,
+  lp.price_date,
+  lr.fiscalYear AS reportFiscalYear,
+  lr.fiscalPeriod AS reportFiscalPeriod,
+  lr.rating
 FROM
- RatedStocks
-WHERE
- rn = 1
+  LatestPrice lp
+JOIN
+  LatestReport lr
+ON
+  lp.ticker = lr.ticker
 ORDER BY
- RAND()
-LIMIT 30
+  lr.rating ASC
+LIMIT 25
+\`\`\`
+User:
+What are the best stocks in history?
+User:
+SYSTEM HINT: Get the best stocks across all time and sort by rating descending 
+AI Assistant:
+\`\`\`sql
+-- The goal of this query is to retrieve the best stocks across all time based on their
+-- highest fundamental ratings. We consider all available reports and for each stock
+-- we select the report with the highest rating. Then, the stocks are sorted in descending
+-- order based on that highest rating.
+--
+-- 1. We use a CTE (BestReports) to rank each stock's reports by rating (and by fiscalYear and fiscalPeriod descending)
+-- so that each ticker gets its best historical report.
+-- 2. We then select only the top report (rn = 1) per ticker and sort the results in descending order by rating.
+-- 3. We include the ticker, fiscalYear, fiscalPeriod, and the rating used in our calculation.
+--
+-- This approach ensures that each ticker appears only once in the result.
+WITH BestReports AS (
+  SELECT
+    ticker,
+    fiscalYear,
+    fiscalPeriod,
+    rating,
+    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY rating DESC, fiscalYear DESC, fiscalPeriod DESC) AS rn
+  FROM
+    \`nexustrade-io.universalstockfundamentals.reports\`
+)
+SELECT
+  ticker,
+  fiscalYear,
+  fiscalPeriod,
+  rating AS bestRating
+FROM
+  BestReports
+WHERE
+  rn = 1
+ORDER BY
+  rating DESC
+LIMIT 25
+\`\`\`
+
+====================================================
+
+User:
+Which non-technology stocks have a price to book value ratio above 10 and a market cap above $50 billion?
+User:
+SYSTEM HINT: For non-technology stocks, we want to look for stocks that have technology as null
+AI Assistant:
+\`\`\`sql
+-- The query below retrieves non-technology stocks (i.e. those where the "technology" field is NULL)
+-- that have a price-to-book value ratio (TTM) above 10 and a market capitalization above $50 billion.
+-- We first determine the latest date in the price_data table, then filter rows from the price_data table
+-- based on the required criteria and join with the stockindustries table to ensure that 'technology' is NULL.
+-- We use DISTINCT on ticker to avoid duplicate entries.
+
+WITH LatestDate AS (
+  SELECT
+    DATE(MAX(date)) AS latest_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\`
+),
+LatestPrice AS (
+  SELECT
+    ticker,
+    priceToBookValueTTM,
+    marketCap,
+    DATE(date) AS price_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\`
+  WHERE
+    DATE(date) = (SELECT latest_date FROM LatestDate)
+    AND priceToBookValueTTM > 10
+    AND marketCap > 50000000000
+)
+SELECT DISTINCT
+  lp.ticker,
+  lp.priceToBookValueTTM,
+  lp.marketCap,
+  lp.price_date
+FROM
+  LatestPrice lp
+JOIN
+  \`nexustrade-io.stockindustries.current\` si
+ON
+  lp.ticker = si.ticker
+WHERE
+  si.technology IS NULL
+ORDER BY
+  lp.priceToBookValueTTM DESC
+LIMIT 25
+\`\`\`
+User:
+What biology-related stocks had the largest revenue increase since last year?
+User:
+SYSTEM HINT: we need to look at all of the industries related to biology. Also, we want to look at revenue for each stock 5 entries ago and compare it to the most recent revenue for each stock (in the quarterly table)
+AI Assistant:
+\`\`\`sql
+-- The query below identifies biology-related stocks that experienced the largest increase in 
+-- quarterly total revenue from the report 5 entries ago (older report) to the most recent report.
+-- We first rank the quarterly financial records by date (converted to date) for each stock.
+-- Then, for each ticker, we select the most recent record (rn = 1) and the record that is 5 entries ago (rn = 5).
+-- We calculate the revenue increase as the difference between the two totalRevenue values.
+-- Finally, we join with the stockindustries table and filter for biology-related stocks by checking
+-- if any of the fields (bioinformatics, biotechnology, computationalBiology) are TRUE, ensuring the results 
+-- are unique by ticker, and order them by the revenue increase in descending order.
+
+WITH RankedFinancials AS (
+  SELECT
+    ticker,
+    totalRevenue,
+    DATE(date) AS report_date,
+    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
+  FROM
+    \`nexustrade-io.financials.quarterly_financials\`
+),
+LatestRevenue AS (
+  SELECT
+    ticker,
+    totalRevenue AS latestRevenue,
+    report_date AS latestReportDate
+  FROM
+    RankedFinancials
+  WHERE
+    rn = 1
+),
+EarlierRevenue AS (
+  SELECT
+    ticker,
+    totalRevenue AS earlierRevenue,
+    report_date AS earlierReportDate
+  FROM
+    RankedFinancials
+  WHERE
+    rn = 5
+),
+RevenueIncrease AS (
+  SELECT
+    lr.ticker,
+    lr.latestRevenue,
+    er.earlierRevenue,
+    (lr.latestRevenue - er.earlierRevenue) AS revenueIncrease,
+    lr.latestReportDate,
+    er.earlierReportDate
+  FROM
+    LatestRevenue lr
+  JOIN
+    EarlierRevenue er
+  ON
+    lr.ticker = er.ticker
+)
+SELECT
+  DISTINCT ri.ticker,
+  ri.latestRevenue,
+  ri.earlierRevenue,
+  ri.revenueIncrease,
+  ri.latestReportDate,
+  ri.earlierReportDate
+FROM
+  RevenueIncrease ri
+JOIN
+  \`nexustrade-io.stockindustries.current\` si
+ON
+  ri.ticker = si.ticker
+WHERE
+  si.bioinformatics = TRUE
+  OR si.biotechnology = TRUE
+  OR si.computationalBiology = TRUE
+ORDER BY
+  ri.revenueIncrease DESC
+LIMIT 25
+\`\`\`
+User:
+what stocks with a market cap below $100 billion had an increasing net income every quarter for the last 4 quarters?
+AI Assistant:
+\`\`\`sql
+-- The following query identifies stocks with a market cap below $100 billion 
+-- that have shown an increasing net income every quarter over the last 4 quarters.
+--
+-- Step 1: LatestPrice CTE finds the most recent price_data record (by converting timestamp to date)
+-- for each stock with marketCap < $100B.
+--
+-- Step 2: RankedFinancials CTE retrieves quarterly net income data for the stocks in LatestPrice, 
+-- ranking the records in reverse chronological order.
+--
+-- Step 3: Latest4 CTE filters to the last 4 quarterly records per stock (rn_desc <= 4) and 
+-- then re-orders them in ascending order (from oldest to most recent) using rn_asc.
+--
+-- Step 4: PivotCTE aggregates the 4 quarters for each ticker, creating columns for each quarter's net income.
+-- We then ensure that each ticker has exactly 4 records (COUNT(*) = 4) and that net income is strictly increasing.
+--
+-- Finally, we join with LatestPrice to include market cap and the latest price date, and then order the results
+-- by the net income increase (q4 - q1) in descending order.
+WITH LatestPrice AS (
+  SELECT
+    ticker,
+    marketCap,
+    DATE(date) AS price_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\`
+  WHERE DATE(date) = (
+    SELECT DATE(MAX(date))
+    FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+  )
+  AND marketCap < 100000000000
+),
+RankedFinancials AS (
+  SELECT
+    ticker,
+    netIncome,
+    DATE(date) AS report_date,
+    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn_desc
+  FROM
+    \`nexustrade-io.financials.quarterly_financials\`
+  WHERE
+    ticker IN (SELECT ticker FROM LatestPrice)
+),
+Latest4 AS (
+  -- Filter to the last 4 quarters for each ticker and re-rank them in ascending order by report_date
+  SELECT
+    ticker,
+    netIncome,
+    report_date,
+    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY report_date ASC) AS rn_asc
+  FROM
+    RankedFinancials
+  WHERE rn_desc <= 4
+),
+PivotCTE AS (
+  -- Pivot the 4 quarters into columns and check for a strictly increasing pattern.
+  SELECT
+    ticker,
+    MAX(IF(rn_asc = 1, netIncome, NULL)) AS q1,
+    MAX(IF(rn_asc = 2, netIncome, NULL)) AS q2,
+    MAX(IF(rn_asc = 3, netIncome, NULL)) AS q3,
+    MAX(IF(rn_asc = 4, netIncome, NULL)) AS q4
+  FROM
+    Latest4
+  GROUP BY
+    ticker
+  HAVING
+    COUNT(*) = 4 
+    AND q1 < q2 AND q2 < q3 AND q3 < q4
+)
+SELECT
+  DISTINCT lp.ticker,
+  lp.marketCap,
+  lp.price_date,
+  p.q1 AS oldestQuarter_NetIncome,
+  p.q2 AS secondQuarter_NetIncome,
+  p.q3 AS thirdQuarter_NetIncome,
+  p.q4 AS latestQuarter_NetIncome,
+  (p.q4 - p.q1) AS netIncome_Trend_Increase
+FROM
+  PivotCTE p
+JOIN
+  LatestPrice lp
+ON
+  p.ticker = lp.ticker
+ORDER BY
+  netIncome_Trend_Increase DESC
+LIMIT 25
+\`\`\`
+
+====================================================
+
+User:
+What was Bitcoin's average daily return all of last year? It's standard deviation of return?
+User:
+SYSTEM HINT: We need to query for the current year and get all Bitcoin crypto data for all of the year
+AI Assistant:
+\`\`\`sql
+-- This query calculates Bitcoin's average daily return and its standard deviation over the full calendar year
+-- prior to the year of the last available crypto price data entry. It dynamically determines the target year.
+--
+-- Steps:
+-- 1. LastEntry CTE: Identify the most recent date in the crypto price data for BTC.
+-- 2. TargetYear CTE: Extract the year from that latest date and subtract 1 to get the previous calendar year.
+-- 3. btc_prices CTE: Retrieve BTC prices for dates where the year matches the target year.
+-- 4. btc_daily_returns CTE: Compute the daily returns using the previous day's closingPrice using the LAG window function.
+-- 5. Final SELECT: Aggregate the daily returns to return both the average and standard deviation, excluding the first record.
+WITH LastEntry AS (
+  SELECT DATE(MAX(date)) AS last_date
+  FROM \`nexustrade-io.cryptofundamentals.price_data\`
+  WHERE symbol = 'BTC'
+),
+TargetYear AS (
+  SELECT EXTRACT(YEAR FROM last_date) - 1 AS target_year
+  FROM LastEntry
+),
+btc_prices AS (
+  SELECT
+    DATE(date) AS dt,
+    closingPrice
+  FROM \`nexustrade-io.cryptofundamentals.price_data\`
+  WHERE symbol = 'BTC'
+    AND EXTRACT(YEAR FROM DATE(date)) = (SELECT target_year FROM TargetYear)
+),
+btc_daily_returns AS (
+  SELECT
+    dt,
+    closingPrice,
+    (closingPrice / LAG(closingPrice) OVER (ORDER BY dt) - 1) AS daily_return
+  FROM btc_prices
+)
+SELECT
+  AVG(daily_return) AS average_daily_return,
+  STDDEV(daily_return) AS stddev_daily_return
+FROM btc_daily_returns
+WHERE daily_return IS NOT NULL
+LIMIT 25
+\`\`\`
+User:
+Within the past year, how many red days were there? What about green days? What was the magnitude of each?
+User:
+SYSTEM HINT: A red day is a day with a return less than 0. a green day is a return greater than 0
+AI Assistant:
+\`\`\`sql
+-- This query calculates Bitcoin's daily returns over the past year (based on the latest available crypto data)
+-- and then aggregates:
+--   1. The number of red days (daily return < 0)
+--   2. The average magnitude (absolute value) of returns on red days
+--   3. The number of green days (daily return > 0)
+--   4. The average return on green days
+--
+-- We first determine the latest available date for Bitcoin (symbol 'BTC') in the crypto price data.
+-- Then we filter for records within the past 365 days (i.e., one year) up to that latest date.
+-- Next, we compute the daily return using the LAG window function.
+-- Finally, we aggregate the counts and average magnitudes for red and green days.
+WITH LastEntry AS (
+  SELECT DATE(MAX(date)) AS last_date
+  FROM \`nexustrade-io.cryptofundamentals.price_data\`
+  WHERE symbol = 'BTC'
+),
+PastYearBTC AS (
+  SELECT
+    DATE(date) AS dt,
+    closingPrice
+  FROM \`nexustrade-io.cryptofundamentals.price_data\`
+  WHERE symbol = 'BTC'
+    AND DATE(date) BETWEEN DATE_SUB((SELECT last_date FROM LastEntry), INTERVAL 365 DAY)
+                        AND (SELECT last_date FROM LastEntry)
+),
+DailyReturns AS (
+  SELECT
+    dt,
+    closingPrice,
+    (closingPrice / LAG(closingPrice) OVER (ORDER BY dt) - 1) AS daily_return
+  FROM PastYearBTC
+)
+SELECT
+  SUM(CASE WHEN daily_return < 0 THEN 1 ELSE 0 END) AS red_day_count,
+  AVG(CASE WHEN daily_return < 0 THEN ABS(daily_return) END) AS avg_red_magnitude,
+  SUM(CASE WHEN daily_return > 0 THEN 1 ELSE 0 END) AS green_day_count,
+  AVG(CASE WHEN daily_return > 0 THEN daily_return END) AS avg_green_magnitude
+FROM DailyReturns
+WHERE daily_return IS NOT NULL
+LIMIT 25
+\`\`\`
+User:
+within the past two years, if Apple is down more than 4% in a week, what is the likelihood it will be down another 4% the following week?
+AI Assistant:
+\`\`\`sql
+-- This query examines AAPL's weekly returns over the past two years to determine, 
+-- if in a given week AAPL was down more than 4%, what is the likelihood it was down more than 4% the following week.
+--
+-- Steps:
+-- 1. LastEntry CTE: Determine the most recent date for AAPL in the price data.
+-- 2. Past2Years CTE: Calculate the start date (2 years ago from the last date) to filter the data.
+-- 3. DailyData CTE: Retrieve daily closing prices for AAPL within the past two years and assign each day to a week.
+-- 4. WeekAgg CTE: For each week (using DATE_TRUNC with WEEK(MONDAY)), identify the first (start_day) and last (end_day) trading day.
+-- 5. FirstLast CTE: Join the daily data back to get the closing price on the start_day and end_day for each week.
+-- 6. WeeklyReturns CTE: Calculate the weekly return as (last_price/first_price - 1) for each week.
+-- 7. Condition CTE: Use the LEAD window function to pair each week with its following week’s return.
+-- 8. Final SELECT: Among weeks where the return was less than -4% (down more than 4%), calculate:
+--    - The total number of such weeks.
+--    - The number of those weeks where the following week was also down more than 4%.
+--    - The likelihood (as a percentage) that a week down more than 4% is followed by another week down more than 4%.
+
+-- This query examines AAPL's weekly returns over the past two years to determine, 
+-- if in a given week AAPL was down more than 4%, what is the likelihood it was down more than 4% the following week.
+--
+-- Steps:
+-- 1. LastEntry CTE: Determine the most recent date for AAPL in the price data.
+-- 2. Past2Years CTE: Calculate the start date (2 years ago from the last date) to filter the data.
+-- 3. DailyData CTE: Retrieve daily closing prices for AAPL within the past two years and assign each day to a week.
+-- 4. WeekAgg CTE: For each week (using DATE_TRUNC with WEEK(MONDAY)), identify the first (start_day) and last (end_day) trading day.
+-- 5. FirstLast CTE: Join the daily data back to get the closing price on the start_day and end_day for each week.
+-- 6. WeeklyReturns CTE: Calculate the weekly return as (last_price/first_price - 1) for each week.
+-- 7. Condition CTE: Use the LEAD window function to pair each week with its following week’s return.
+-- 8. Final SELECT: Among weeks where the return was less than -4% (down more than 4%), calculate:
+--    - The total number of such weeks.
+--    - The number of those weeks where the following week was also down more than 4%.
+--    - The likelihood (as a percentage) that a week down more than 4% is followed by another week down more than 4%.
+WITH LastEntry AS (
+  SELECT
+    DATE(MAX(date)) AS last_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+  WHERE ticker = 'AAPL'
+),
+Past2Years AS (
+  SELECT
+    DATE_SUB(last_date, INTERVAL 2 YEAR) AS start_date,
+    last_date
+  FROM LastEntry
+),
+DailyData AS (
+  SELECT
+    DATE(date) AS day,
+    lastClosingPrice,
+    DATE_TRUNC(DATE(date), WEEK(MONDAY)) AS week_start
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+  WHERE ticker = 'AAPL'
+    AND DATE(date) BETWEEN (SELECT start_date FROM Past2Years)
+                       AND (SELECT last_date FROM LastEntry)
+),
+WeekAgg AS (
+  SELECT
+    week_start,
+    MIN(day) AS start_day,
+    MAX(day) AS end_day
+  FROM DailyData
+  GROUP BY week_start
+),
+FirstLast AS (
+  SELECT
+    w.week_start,
+    d_first.lastClosingPrice AS first_price,
+    d_last.lastClosingPrice AS last_price
+  FROM WeekAgg w
+  JOIN DailyData d_first 
+    ON d_first.week_start = w.week_start AND d_first.day = w.start_day
+  JOIN DailyData d_last 
+    ON d_last.week_start = w.week_start AND d_last.day = w.end_day
+),
+WeeklyReturns AS (
+  SELECT
+    week_start,
+    first_price,
+    last_price,
+    (last_price / first_price - 1) AS weekly_return
+  FROM FirstLast
+),
+Condition AS (
+  SELECT
+    week_start,
+    weekly_return,
+    LEAD(weekly_return) OVER (ORDER BY week_start) AS next_week_return
+  FROM WeeklyReturns
+)
+SELECT
+  COUNT(*) AS total_weeks_down_over_4,
+  SUM(CASE WHEN next_week_return < -0.04 THEN 1 ELSE 0 END) AS weeks_followed_by_down_over_4,
+  SAFE_DIVIDE(100 * SUM(CASE WHEN next_week_return < -0.04 THEN 1 ELSE 0 END), COUNT(*)) AS likelihood_percentage
+FROM Condition
+WHERE weekly_return < -0.04
+\`\`\`
+
+====================================================
+
+User:
+What stocks are above their 7 day SMA, their 50 day SMA, and their 200 day SMA? Return the top 5 best AI stocks, cryptocurrency stocks, EV stocks, and gaming stocks that fit this criteria
+AI Assistant:
+\`\`\`sql
+-- This query calculates the 7-day, 50-day, and 200-day simple moving averages (SMA) for each stock 
+-- using the latest available price data from the universalstockfundamentals.price_data table.
+-- It then filters for stocks whose current lastClosingPrice exceeds all three SMAs.
+-- After that, it joins with the stockindustries.current table to filter for stocks in one of four categories:
+--    Artificial Intelligence (artificialIntelligence = TRUE)
+--    Cryptocurrency (cryptocurrency = TRUE)
+--    Electric Vehicle (electricVehicle = TRUE)
+--    Gaming (gaming = TRUE)
+-- For each category we rank stocks based on the percentage difference between lastClosingPrice 
+-- and the 200-day SMA (i.e. (lastClosingPrice - sma200) / sma200) and return the top 5 per category.
+--
+-- We wrap each category's query in parentheses to allow ORDER BY and LIMIT inside Union ALL.
+-- We also ensure we only return distinct tickers.
+WITH LatestDate AS (
+  -- Get the latest available date (converted to a date) in the universal stock fundamentals price data.
+  SELECT DATE(MAX(date)) AS latest_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+),
+LatestPrice AS (
+  -- Get the latest price record for each ticker on the latest available date.
+  SELECT
+    ticker,
+    lastClosingPrice,
+    DATE(date) AS price_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`, LatestDate
+  WHERE DATE(date) = LatestDate.latest_date
+),
+SMA_Calc AS (
+  -- For each ticker from LatestPrice, calculate the 7-day, 50-day, and 200-day SMAs.
+  SELECT
+    lp.ticker,
+    lp.lastClosingPrice,
+    (SELECT AVG(p7.lastClosingPrice)
+     FROM \`nexustrade-io.universalstockfundamentals.price_data\` p7, LatestDate
+     WHERE p7.ticker = lp.ticker
+       AND DATE(p7.date) BETWEEN DATE_SUB(LatestDate.latest_date, INTERVAL 6 DAY) AND LatestDate.latest_date
+    ) AS sma7,
+    (SELECT AVG(p50.lastClosingPrice)
+     FROM \`nexustrade-io.universalstockfundamentals.price_data\` p50, LatestDate
+     WHERE p50.ticker = lp.ticker
+       AND DATE(p50.date) BETWEEN DATE_SUB(LatestDate.latest_date, INTERVAL 49 DAY) AND LatestDate.latest_date
+    ) AS sma50,
+    (SELECT AVG(p200.lastClosingPrice)
+     FROM \`nexustrade-io.universalstockfundamentals.price_data\` p200, LatestDate
+     WHERE p200.ticker = lp.ticker
+       AND DATE(p200.date) BETWEEN DATE_SUB(LatestDate.latest_date, INTERVAL 199 DAY) AND LatestDate.latest_date
+    ) AS sma200
+  FROM LatestPrice lp
+),
+SMA_Filtered AS (
+  -- Filter for stocks whose current price is above the 7-day, 50-day, and 200-day SMAs.
+  SELECT
+    ticker,
+    lastClosingPrice,
+    sma7,
+    sma50,
+    sma200,
+    ((lastClosingPrice - sma200) / sma200) AS percent_above_200
+  FROM SMA_Calc
+  WHERE lastClosingPrice > sma7
+    AND lastClosingPrice > sma50
+    AND lastClosingPrice > sma200
+)
+-- For each category, join with the stockindustries table and then select the top 5 stocks based on percent_above_200.
+(
+  SELECT
+    'Artificial Intelligence' AS category,
+    s.ticker,
+    s.lastClosingPrice,
+    s.sma7,
+    s.sma50,
+    s.sma200,
+    s.percent_above_200
+  FROM SMA_Filtered s
+  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
+  WHERE si.artificialIntelligence = TRUE
+  ORDER BY s.percent_above_200 DESC
+  LIMIT 5
+)
+UNION ALL
+(
+  SELECT
+    'Cryptocurrency' AS category,
+    s.ticker,
+    s.lastClosingPrice,
+    s.sma7,
+    s.sma50,
+    s.sma200,
+    s.percent_above_200
+  FROM SMA_Filtered s
+  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
+  WHERE si.cryptocurrency = TRUE
+  ORDER BY s.percent_above_200 DESC
+  LIMIT 5
+)
+UNION ALL
+(
+  SELECT
+    'Electric Vehicle' AS category,
+    s.ticker,
+    s.lastClosingPrice,
+    s.sma7,
+    s.sma50,
+    s.sma200,
+    s.percent_above_200
+  FROM SMA_Filtered s
+  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
+  WHERE si.electricVehicle = TRUE
+  ORDER BY s.percent_above_200 DESC
+  LIMIT 5
+)
+UNION ALL
+(
+  SELECT
+    'Gaming' AS category,
+    s.ticker,
+    s.lastClosingPrice,
+    s.sma7,
+    s.sma50,
+    s.sma200,
+    s.percent_above_200
+  FROM SMA_Filtered s
+  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
+  WHERE si.gaming = TRUE
+  ORDER BY s.percent_above_200 DESC
+  LIMIT 5
+)
+\`\`\`
+
+====================================================
+
+User:
+Find me stocks with a dividend yield above 3% and a debt equity ratio less than 0.4
+AI Assistant:
+\`\`\`sql
+-- This query finds stocks with a dividend yield above 3% and a debt-to-equity ratio (totalLiab / totalStockholderEquity)
+-- below 0.4. We obtain the latest dividend yield from the latest price_data record and the latest financial 
+-- data from the quarterly table. We then join them by ticker to filter the results accordingly.
+--
+-- Step 1: LatestPrice CTE gets, for each ticker, the most recent price data (converted to a date) and its dividendYield.
+-- Step 2: LatestFinancials CTE ranks quarterly financial records by date (converted to date) per ticker, and selects the latest record.
+-- Step 3: In the final query, we join these two CTEs and calculate the debt-to-equity ratio as (totalLiab / totalStockholderEquity). 
+--         Only stocks with dividendYield > 3% and debt-to-equity ratio < 0.4 are returned.
+--
+-- Note: To ensure unique stocks we aggregate by ticker, and we use a default limit of 25.
+WITH LatestPrice AS (
+  SELECT
+    p.ticker,
+    p.dividendYield,
+    DATE(p.date) AS price_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\` AS p
+  WHERE
+    DATE(p.date) = (
+      SELECT DATE(MAX(date))
+      FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+    )
+),
+LatestFinancials AS (
+  SELECT
+    ticker,
+    totalLiab,
+    totalStockholderEquity,
+    DATE(date) AS report_date
+  FROM (
+    SELECT
+      ticker,
+      totalLiab,
+      totalStockholderEquity,
+      date,
+      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
+    FROM
+      \`nexustrade-io.financials.quarterly_financials\`
+  )
+  WHERE rn = 1
+)
+SELECT
+  lp.ticker,
+  lp.dividendYield,
+  lf.totalLiab,
+  lf.totalStockholderEquity,
+  (lf.totalLiab / lf.totalStockholderEquity) AS debt_to_equity_ratio,
+  lp.price_date,
+  lf.report_date
+FROM
+  LatestPrice lp
+JOIN
+  LatestFinancials lf
+ON
+  lp.ticker = lf.ticker
+WHERE
+  lp.dividendYield > 0.03
+  AND (lf.totalLiab / lf.totalStockholderEquity) < 0.4
+ORDER BY
+  lp.dividendYield DESC
+LIMIT 25
+\`\`\`
+AI Assistant:
+ERROR:  division by zero: 7.8946e+10 / 0 
+
+Also, we should sum the short and long-term debts
+AI Assistant:
+\`\`\`sql
+-- This query finds stocks with a dividend yield above 3% and a debt-to-equity ratio (calculated as
+-- (shortTermDebt + longTermDebt) / totalStockholderEquity) below 0.4.
+--
+-- Step 1: LatestPrice CTE retrieves the most recent price data (converted to date) along with dividendYield.
+-- Step 2: LatestFinancials CTE obtains the latest quarterly financial metrics per ticker, including shortTermDebt,
+-- longTermDebt, and totalStockholderEquity. We include only records where totalStockholderEquity is greater than 0
+-- to avoid division by zero.
+-- Step 3: In the final query, we compute the debt-to-equity ratio and filter for stocks with dividendYield > 3%
+-- and the computed ratio < 0.4.
+WITH LatestPrice AS (
+  SELECT
+    p.ticker,
+    p.dividendYield,
+    DATE(p.date) AS price_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\` AS p
+  WHERE
+    DATE(p.date) = (
+      SELECT DATE(MAX(date))
+      FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+    )
+),
+LatestFinancials AS (
+  SELECT
+    ticker,
+    shortTermDebt,
+    longTermDebt,
+    totalStockholderEquity,
+    DATE(date) AS report_date
+  FROM (
+    SELECT
+      ticker,
+      shortTermDebt,
+      longTermDebt,
+      totalStockholderEquity,
+      date,
+      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
+    FROM
+      \`nexustrade-io.financials.quarterly_financials\`
+  )
+  WHERE rn = 1
+    AND totalStockholderEquity > 0  -- avoid division by zero
+)
+SELECT
+  lp.ticker,
+  lp.dividendYield,
+  lf.shortTermDebt,
+  lf.longTermDebt,
+  lf.totalStockholderEquity,
+  (lf.shortTermDebt + lf.longTermDebt) AS total_debt,
+  ((lf.shortTermDebt + lf.longTermDebt) / lf.totalStockholderEquity) AS debt_to_equity_ratio,
+  lp.price_date,
+  lf.report_date
+FROM
+  LatestPrice lp
+JOIN
+  LatestFinancials lf
+ON
+  lp.ticker = lf.ticker
+WHERE
+  lp.dividendYield > 0.03
+  AND ((lf.shortTermDebt + lf.longTermDebt) / lf.totalStockholderEquity) < 0.4
+ORDER BY
+  lp.dividendYield DESC
+LIMIT 25
+\`\`\`
+
+====================================================
+
+User:
+what stocks have a much higher today than it usually does?
+User:
+SYSTEM HINT:
+1. Look at the lastest volume for all stocks
+2. Compute the average volume for each stock for some time period (like the last year)
+3. Likely compute the standard deviation of volume, so we can see which ones are 1 standard deviation above the average
+AI Assistant:
+\`\`\`sql
+-- This query identifies stocks that traded with a volume today (i.e., on the latest available date)
+-- significantly higher than their average volume over the past year.
+-- We first determine the most recent trading date.
+-- Then for each stock we get today's trading volume and calculate its average and standard deviation
+-- of trading volume from the past 365 days.
+-- Finally, we filter for stocks where today's volume is greater than (average volume + 1 standard deviation).
+-- We use a JOIN on the ticker and order the results by the difference (today's volume minus average volume) in descending order,
+-- ensuring that each ticker appears only once.
+WITH LatestDate AS (
+  SELECT DATE(MAX(date)) AS latest_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+),
+LatestVolume AS (
+  -- Retrieves today's volume per stock
+  SELECT
+    ticker,
+    tradingVolume AS today_volume,
+    DATE(date) AS price_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+  WHERE DATE(date) = (SELECT latest_date FROM LatestDate)
+),
+HistoricalVolume AS (
+  -- Computes the average and standard deviation of trading volume for each stock over the past 365 days
+  SELECT
+    ticker,
+    AVG(tradingVolume) AS avg_volume,
+    STDDEV(tradingVolume) AS stddev_volume
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`,
+       (SELECT latest_date FROM LatestDate) ld
+  WHERE DATE(date) BETWEEN DATE_SUB(ld.latest_date, INTERVAL 365 DAY) AND ld.latest_date
+  GROUP BY ticker
+)
+SELECT
+  lv.ticker,
+  lv.today_volume,
+  hv.avg_volume,
+  hv.stddev_volume,
+  (lv.today_volume - hv.avg_volume) AS volume_diff
+FROM LatestVolume lv
+JOIN HistoricalVolume hv ON lv.ticker = hv.ticker
+WHERE lv.today_volume > (hv.avg_volume + hv.stddev_volume)
+ORDER BY volume_diff DESC
+LIMIT 25;
+\`\`\`
+User:
+What stocks have the highest volume today?
+AI Assistant:
+\`\`\`sql
+-- This query retrieves stocks with the highest tradingVolume on the latest available trading day.
+-- The LatestDate CTE determines the most recent date in the price_data table,
+-- and then we select stocks from that date ordered by tradingVolume in descending order.
+WITH LatestDate AS (
+  SELECT DATE(MAX(date)) AS latest_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
+)
+SELECT
+  ticker,
+  tradingVolume,
+  DATE(date) AS price_date
+FROM
+  \`nexustrade-io.universalstockfundamentals.price_data\`
+WHERE
+  DATE(date) = (SELECT latest_date FROM LatestDate)
+ORDER BY
+  tradingVolume DESC
+LIMIT 25;
 \`\`\`
 
 ====================================================
@@ -386,267 +1195,6 @@ JOIN IndustryData id
   ON ti.ticker = id.ticker
 GROUP BY id.industry
 ORDER BY avg_price_increase_pct DESC;
-\`\`\`
-
-====================================================
-
-User:
-What companies with a market cap above $100 billion have an RSI below 25?
-User:
-# SYSTEM HINT: You must calculate it from the price data. You MUST make sure to look at the latest price data per stock
-AI Assistant:
-\`\`\`
--- This query identifies large-cap companies (market cap > $100 billion) with an RSI below 25,
--- indicating they may be oversold according to this technical indicator.
---
--- RSI (Relative Strength Index) calculation follows these steps:
--- 1. Get price data for the last 30 days (to have enough for 14-day RSI)
--- 2. Calculate daily price changes
--- 3. Separate gains (up days) and losses (down days)
--- 4. Calculate the average gain and average loss over 14 periods
--- 5. Calculate RS (Relative Strength) = average gain / average loss
--- 6. Calculate RSI = 100 - (100 / (1 + RS))
--- 7. Filter for stocks with RSI < 25 (oversold condition)
-
--- Step 1: Find the latest date in the price data
-WITH LatestDate AS (
-  SELECT DATE(MAX(date)) AS latest_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-),
-
--- Step 2: Identify stocks with market cap > $100 billion on the latest date
-LargeCaps AS (
-  SELECT ticker
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`, LatestDate
-  WHERE DATE(date) = LatestDate.latest_date
-  AND marketCap > 100000000000 -- $100 billion
-),
-
--- Step 3: Get the last 30 trading days of price data for large-cap stocks
--- We use ROW_NUMBER to rank days (newest = 1) to ensure we're using trading days, not calendar days
-PriceData AS (
-  SELECT 
-    p.ticker,
-    DATE(p.date) AS price_date,
-    p.lastClosingPrice,
-    p.marketCap,
-    ROW_NUMBER() OVER (PARTITION BY p.ticker ORDER BY DATE(p.date) DESC) AS day_rank
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\` p
-  JOIN LargeCaps lc ON p.ticker = lc.ticker
-  JOIN LatestDate ld ON DATE(p.date) <= ld.latest_date AND DATE(p.date) > DATE_SUB(ld.latest_date, INTERVAL 30 DAY)
-),
-
--- Step 4: Calculate daily price changes for each stock
--- We join consecutive days using the day_rank to calculate price changes
-PriceChanges AS (
-  SELECT
-    a.ticker,
-    a.price_date,
-    a.lastClosingPrice,
-    a.marketCap,
-    a.day_rank,
-    (a.lastClosingPrice - b.lastClosingPrice) AS price_change
-  FROM PriceData a
-  JOIN PriceData b ON a.ticker = b.ticker AND a.day_rank = b.day_rank - 1
-  WHERE a.day_rank <= 15  -- We need 14 changes (requires 15 prices)
-),
-
--- Step 5: Separate gains and losses
--- For each day, classify price change as either a gain (positive) or loss (negative)
-GainsLosses AS (
-  SELECT
-    ticker,
-    price_date,
-    day_rank,
-    CASE WHEN price_change > 0 THEN price_change ELSE 0 END AS gain,
-    CASE WHEN price_change < 0 THEN ABS(price_change) ELSE 0 END AS loss
-  FROM PriceChanges
-),
-
--- Step 6: Calculate average gains and average losses over the 14-day period
--- Standard RSI uses a simple average for the first calculation
-FirstAvg AS (
-  SELECT
-    ticker,
-    AVG(gain) AS avg_gain,
-    AVG(loss) AS avg_loss
-  FROM GainsLosses
-  WHERE day_rank <= 14
-  GROUP BY ticker
-),
-
--- Step 7: Calculate RSI using the formula: RSI = 100 - (100 / (1 + RS))
--- Where RS = Average Gain / Average Loss
--- If there are no losses (avg_loss = 0), RSI is set to 100 (maximum)
-RSI_Calculation AS (
-  SELECT
-    ticker,
-    CASE 
-      WHEN avg_loss = 0 THEN 100
-      ELSE 100 - (100 / (1 + (avg_gain / avg_loss)))
-    END AS rsi
-  FROM FirstAvg
-)
-
--- Step 8: Final result - pull latest price data for stocks with RSI < 25
--- This finds potentially oversold large-cap stocks
-SELECT
-  pd.ticker,
-  pd.lastClosingPrice,
-  pd.marketCap,
-  rc.rsi
-FROM PriceData pd
-JOIN RSI_Calculation rc ON pd.ticker = rc.ticker
-WHERE pd.day_rank = 1  -- Most recent day
-AND rc.rsi < 25
-ORDER BY rc.rsi ASC  -- Sorted from most oversold to least
-LIMIT 25
-\`\`\`
-
-====================================================
-
-User:
-Analyze GME's last earnings
-User:
-SYSTEM HINT: Query for the last 4 quarters of financials/EPS and last 4 years and compare it to the most recent quarterly earnings
-AI Assistant:
-\`\`\`sql
--- This query analyzes GME's (GameStop) latest earnings by examining:
--- 1. The most recent quarterly earnings report
--- 2. The previous 3 quarterly earnings reports for quarter-over-quarter comparison
--- 3. Annual financial data for the past 4 fiscal years for long-term trend analysis
---
--- We'll look at key metrics like revenue, net income, EPS, and free cash flow.
-
-WITH LatestQuarterlyEarnings AS (
- SELECT
- ticker,
- DATE(date) AS report_date,
- epsActual,
- epsDifference,
- surprisePercent,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn
- FROM
- \`nexustrade-io.financials.quarterly_earnings\`
- WHERE
- ticker = 'GME'
- AND epsActual IS NOT NULL
-),
-
--- Get the previous 4 quarters of earnings data
-Recent4QuartersEarnings AS (
- SELECT
- ticker,
- DATE(date) AS report_date,
- epsActual,
- epsDifference,
- surprisePercent,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS quarter_rank
- FROM
- \`nexustrade-io.financials.quarterly_earnings\`
- WHERE
- ticker = 'GME'
- AND epsActual IS NOT NULL
- LIMIT 4
-),
-
--- Get the most recent 4 quarters of financial data
-Recent4QuartersFinancials AS (
- SELECT
- ticker,
- DATE(date) AS report_date,
- totalRevenue,
- netIncome,
- freeCashFlow,
- grossProfit,
- operatingIncome,
- totalLiab,
- totalStockholderEquity,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS quarter_rank
- FROM
- \`nexustrade-io.financials.quarterly_financials\`
- WHERE
- ticker = 'GME'
- LIMIT 4
-),
-
--- Get the annual financial data for the past 4 fiscal years
-Recent4YearsFinancials AS (
- SELECT
- ticker,
- DATE(date) AS report_date,
- totalRevenue,
- netIncome,
- freeCashFlow,
- grossProfit,
- operatingIncome,
- totalLiab,
- totalStockholderEquity,
- ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS year_rank
- FROM
- \`nexustrade-io.financials.annual_financials\`
- WHERE
- ticker = 'GME'
- LIMIT 4
-),
-
--- Combine quarterly earnings with quarterly financials
-QuarterlyData AS (
- SELECT
- 'Quarterly Data' AS data_type,
- qe.quarter_rank,
- qe.ticker,
- qe.report_date,
- qe.epsActual,
- qe.epsDifference,
- qe.surprisePercent,
- qf.totalRevenue,
- qf.netIncome,
- qf.freeCashFlow,
- qf.grossProfit,
- qf.operatingIncome,
- qf.totalLiab,
- qf.totalStockholderEquity,
- (qf.totalLiab / NULLIF(qf.totalStockholderEquity, 0)) AS debt_to_equity_ratio,
- (qf.grossProfit / NULLIF(qf.totalRevenue, 0)) * 100 AS gross_margin_pct,
- (qf.netIncome / NULLIF(qf.totalRevenue, 0)) * 100 AS net_margin_pct
- FROM
- Recent4QuartersEarnings qe
- JOIN
- Recent4QuartersFinancials qf
- ON
- qe.quarter_rank = qf.quarter_rank
-),
-
--- Format annual data
-AnnualData AS (
- SELECT
- 'Annual Data' AS data_type,
- year_rank AS quarter_rank,
- ticker,
- report_date,
- NULL AS epsActual,
- NULL AS epsDifference,
- NULL AS surprisePercent,
- totalRevenue,
- netIncome,
- freeCashFlow,
- grossProfit,
- operatingIncome,
- totalLiab,
- totalStockholderEquity,
- (totalLiab / NULLIF(totalStockholderEquity, 0)) AS debt_to_equity_ratio,
- (grossProfit / NULLIF(totalRevenue, 0)) * 100 AS gross_margin_pct,
- (netIncome / NULLIF(totalRevenue, 0)) * 100 AS net_margin_pct
- FROM
- Recent4YearsFinancials
-)
-
--- Combine quarterly and annual data
-SELECT * FROM QuarterlyData
-UNION ALL
-SELECT * FROM AnnualData
-ORDER BY data_type, quarter_rank
 \`\`\`
 
 ====================================================
@@ -860,976 +1408,19 @@ ORDER BY y.year;
 ====================================================
 
 User:
-what stocks have a much higher today than it usually does?
+Perform financial analysis
 User:
-SYSTEM HINT:
-1. Look at the lastest volume for all stocks
-2. Compute the average volume for each stock for some time period (like the last year)
-3. Likely compute the standard deviation of volume, so we can see which ones are 1 standard deviation above the average
+SYSTEM HINT: We need more details. The user is probably newer, so let's guide them through how to perform financial analysis
 AI Assistant:
-\`\`\`sql
--- This query identifies stocks that traded with a volume today (i.e., on the latest available date)
--- significantly higher than their average volume over the past year.
--- We first determine the most recent trading date.
--- Then for each stock we get today's trading volume and calculate its average and standard deviation
--- of trading volume from the past 365 days.
--- Finally, we filter for stocks where today's volume is greater than (average volume + 1 standard deviation).
--- We use a JOIN on the ticker and order the results by the difference (today's volume minus average volume) in descending order,
--- ensuring that each ticker appears only once.
-WITH LatestDate AS (
-  SELECT DATE(MAX(date)) AS latest_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-),
-LatestVolume AS (
-  -- Retrieves today's volume per stock
-  SELECT
-    ticker,
-    tradingVolume AS today_volume,
-    DATE(date) AS price_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-  WHERE DATE(date) = (SELECT latest_date FROM LatestDate)
-),
-HistoricalVolume AS (
-  -- Computes the average and standard deviation of trading volume for each stock over the past 365 days
-  SELECT
-    ticker,
-    AVG(tradingVolume) AS avg_volume,
-    STDDEV(tradingVolume) AS stddev_volume
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`,
-       (SELECT latest_date FROM LatestDate) ld
-  WHERE DATE(date) BETWEEN DATE_SUB(ld.latest_date, INTERVAL 365 DAY) AND ld.latest_date
-  GROUP BY ticker
-)
-SELECT
-  lv.ticker,
-  lv.today_volume,
-  hv.avg_volume,
-  hv.stddev_volume,
-  (lv.today_volume - hv.avg_volume) AS volume_diff
-FROM LatestVolume lv
-JOIN HistoricalVolume hv ON lv.ticker = hv.ticker
-WHERE lv.today_volume > (hv.avg_volume + hv.stddev_volume)
-ORDER BY volume_diff DESC
-LIMIT 25;
-\`\`\`
-User:
-What stocks have the highest volume today?
-AI Assistant:
-\`\`\`sql
--- This query retrieves stocks with the highest tradingVolume on the latest available trading day.
--- The LatestDate CTE determines the most recent date in the price_data table,
--- and then we select stocks from that date ordered by tradingVolume in descending order.
-WITH LatestDate AS (
-  SELECT DATE(MAX(date)) AS latest_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-)
-SELECT
-  ticker,
-  tradingVolume,
-  DATE(date) AS price_date
-FROM
-  \`nexustrade-io.universalstockfundamentals.price_data\`
-WHERE
-  DATE(date) = (SELECT latest_date FROM LatestDate)
-ORDER BY
-  tradingVolume DESC
-LIMIT 25;
-\`\`\`
+What specific financial analysis are you hoping to perform? For example, are you interested in:
 
-====================================================
+1.  **Stock Screening:** Identifying stocks that meet certain criteria (e.g., dividend yield, debt-to-equity ratio, market capitalization, industry)?
+2.  **Performance Analysis:** Comparing the performance of different stocks or industries over a specific period?
+3.  **Trend Analysis:** Identifying stocks with increasing revenue, net income, or free cash flow over time?
+4.  **Risk Analysis:** Determining the volatility of a stock or cryptocurrency?
+5.  **Moving Averages:** Finding stocks above their simple moving averages?
 
-User:
-What non-technology stocks are fundamentally strong? Include their metrics like 4-yr CAGR for revenue, net income, and FCF, their current revenue, net income, and FCF, and P/E ratio
-User:
-SYSTEM HINT, for "fundamentally strong", look at the reports table
-\`nexustrade-io.universalstockfundamentals.reports\` and sort by the rating descending. for CAGR: Look at the \`annual_financials\` table and do 10 entries, 5 entries, and 3 entries before the period of time. Unless they specify otherwise, always, include the 3-year, 5-year, and 10-year CAGR. 
-AI Assistant:
-\`\`\`sql
--- This query identifies non-technology stocks that are fundamentally strong based on their rating
--- in the reports table. It calculates 3-year, 5-year, and 10-year CAGR for revenue, net income, 
--- and free cash flow, and includes current metrics and P/E ratio.
---
--- Steps:
--- 1. LatestDate CTE: Find the most recent date in the price_data table
--- 2. LatestPrice CTE: Get the latest price data including P/E ratio
--- 3. LatestReport CTE: Get the latest fundamental report for each stock
--- 4. NonTechStocks CTE: Identify stocks where technology is NULL
--- 5. LatestFinancials CTE: Get the most recent quarterly financial data
--- 6. AnnualFinancials CTE: Get annual financial data for the past 10 years
--- 7. CAGR_Calculations CTE: Calculate 3-year, 5-year, and 10-year CAGR for revenue, net income, and FCF
--- 8. Final query: Join all CTEs and filter for fundamentally strong stocks (rating >= 3.5)
-
-WITH LatestDate AS (
- SELECT DATE(MAX(date)) AS latest_date
- FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-),
-
-LatestPrice AS (
- SELECT
- ticker,
- priceToEarningsRatioTTM AS pe_ratio,
- marketCap
- FROM \`nexustrade-io.universalstockfundamentals.price_data\`
- WHERE DATE(date) = (SELECT latest_date FROM LatestDate)
-),
-
-LatestReport AS (
- SELECT
- ticker,
- rating,
- fiscalYear,
- fiscalPeriod
- FROM (
- SELECT
- ticker,
- rating,
- fiscalYear,
- fiscalPeriod,
- ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
- FROM \`nexustrade-io.universalstockfundamentals.reports\`
- )
- WHERE rn = 1
-),
-
-NonTechStocks AS (
- SELECT DISTINCT ticker
- FROM \`nexustrade-io.stockindustries.current\`
- WHERE technology IS NULL
-),
-
-LatestFinancials AS (
- SELECT
- ticker,
- totalRevenue AS current_revenue,
- netIncome AS current_net_income,
- freeCashFlow AS current_fcf,
- DATE(date) AS report_date
- FROM (
- SELECT
- ticker,
- totalRevenue,
- netIncome,
- freeCashFlow,
- date,
- ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
- FROM \`nexustrade-io.financials.quarterly_financials\`
- )
- WHERE rn = 1
-),
-
-AnnualFinancials AS (
- SELECT
- ticker,
- totalRevenue,
- netIncome,
- freeCashFlow,
- DATE(date) AS annual_date,
- ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS year_rank
- FROM \`nexustrade-io.financials.annual_financials\`
- WHERE ticker IN (SELECT ticker FROM NonTechStocks)
-),
-
-CAGR_Calculations AS (
- SELECT
- latest.ticker,
- 
- -- 3-year CAGR calculations
- CASE
- WHEN latest.totalRevenue > 0 AND yr3.totalRevenue > 0
- THEN POWER((latest.totalRevenue / yr3.totalRevenue), 1/3) - 1
- ELSE NULL
- END AS revenue_cagr_3yr,
- 
- CASE
- WHEN latest.netIncome > 0 AND yr3.netIncome > 0
- THEN POWER((latest.netIncome / yr3.netIncome), 1/3) - 1
- ELSE NULL
- END AS net_income_cagr_3yr,
- 
- CASE
- WHEN latest.freeCashFlow > 0 AND yr3.freeCashFlow > 0
- THEN POWER((latest.freeCashFlow / yr3.freeCashFlow), 1/3) - 1
- ELSE NULL
- END AS fcf_cagr_3yr,
- 
- -- 5-year CAGR calculations
- CASE
- WHEN latest.totalRevenue > 0 AND yr5.totalRevenue > 0
- THEN POWER((latest.totalRevenue / yr5.totalRevenue), 1/5) - 1
- ELSE NULL
- END AS revenue_cagr_5yr,
- 
- CASE
- WHEN latest.netIncome > 0 AND yr5.netIncome > 0
- THEN POWER((latest.netIncome / yr5.netIncome), 1/5) - 1
- ELSE NULL
- END AS net_income_cagr_5yr,
- 
- CASE
- WHEN latest.freeCashFlow > 0 AND yr5.freeCashFlow > 0
- THEN POWER((latest.freeCashFlow / yr5.freeCashFlow), 1/5) - 1
- ELSE NULL
- END AS fcf_cagr_5yr,
- 
- -- 10-year CAGR calculations
- CASE
- WHEN latest.totalRevenue > 0 AND yr10.totalRevenue > 0
- THEN POWER((latest.totalRevenue / yr10.totalRevenue), 1/10) - 1
- ELSE NULL
- END AS revenue_cagr_10yr,
- 
- CASE
- WHEN latest.netIncome > 0 AND yr10.netIncome > 0
- THEN POWER((latest.netIncome / yr10.netIncome), 1/10) - 1
- ELSE NULL
- END AS net_income_cagr_10yr,
- 
- CASE
- WHEN latest.freeCashFlow > 0 AND yr10.freeCashFlow > 0
- THEN POWER((latest.freeCashFlow / yr10.freeCashFlow), 1/10) - 1
- ELSE NULL
- END AS fcf_cagr_10yr
- 
- FROM 
- (SELECT * FROM AnnualFinancials WHERE year_rank = 1) latest
- LEFT JOIN 
- (SELECT * FROM AnnualFinancials WHERE year_rank = 4) yr3
- ON latest.ticker = yr3.ticker
- LEFT JOIN 
- (SELECT * FROM AnnualFinancials WHERE year_rank = 6) yr5
- ON latest.ticker = yr5.ticker
- LEFT JOIN 
- (SELECT * FROM AnnualFinancials WHERE year_rank = 11) yr10
- ON latest.ticker = yr10.ticker
-)
-
-SELECT
- lr.ticker,
- lr.rating,
- lr.fiscalYear AS latest_report_year,
- lr.fiscalPeriod AS latest_report_period,
- lf.current_revenue,
- lf.current_net_income,
- lf.current_fcf,
- lp.pe_ratio,
- lp.marketCap,
- 
- -- 3-year CAGR
- c.revenue_cagr_3yr,
- c.net_income_cagr_3yr,
- c.fcf_cagr_3yr,
- 
- -- 5-year CAGR
- c.revenue_cagr_5yr,
- c.net_income_cagr_5yr,
- c.fcf_cagr_5yr,
- 
- -- 10-year CAGR
- c.revenue_cagr_10yr,
- c.net_income_cagr_10yr,
- c.fcf_cagr_10yr
- 
-FROM LatestReport lr
-JOIN NonTechStocks nts ON lr.ticker = nts.ticker
-JOIN LatestFinancials lf ON lr.ticker = lf.ticker
-JOIN LatestPrice lp ON lr.ticker = lp.ticker
-LEFT JOIN CAGR_Calculations c ON lr.ticker = c.ticker
-WHERE lr.rating >= 3.5
-ORDER BY lr.rating DESC
-LIMIT 25
-\`\`\`
-User:
-what biotech stocks with a ranking of 3+ and a 2022 revenue above $20B have a 5-year CAGR of 10% or higher as of 2022
-User:
-SYSTEM HINT: 
-1. Look at the annual revenue in 2022 to find if it's above $20B
-2. Compute CAGR from 2022 and look 5 records before that for CAGR
-3. even though they didn't mention it, the stock rating should be 3+ in 2022
-AI Assistant:
-\`\`\`sql
--- This query identifies biotech stocks that meet the following criteria:
--- 1. Have a ranking of 3 or higher in 2022
--- 2. Had revenue above $20 billion in 2022
--- 3. Had a 5-year revenue CAGR of 40% or higher as of 2022
---
--- Steps:
--- 1. BiotechStocks CTE: Identify stocks in the biotechnology industry
--- 2. StockRatings2022 CTE: Find stocks with a rating of 3+ in 2022
--- 3. Revenue2022 CTE: Find stocks with revenue above $20B in 2022
--- 4. Revenue2017 CTE: Get revenue data from 2017 (5 years before 2022)
--- 5. CAGR_Calculation CTE: Calculate the 5-year CAGR from 2017 to 2022
--- 6. Final query: Join all CTEs and filter for stocks meeting all criteria
-
-WITH BiotechStocks AS (
- SELECT DISTINCT ticker
- FROM \`nexustrade-io.stockindustries.current\`
- WHERE biotechnology = TRUE
-),
-
-StockRatings2022 AS (
- SELECT 
- ticker,
- rating
- FROM \`nexustrade-io.universalstockfundamentals.reports\`
- WHERE fiscalYear = 2022
- AND rating >= 3
- -- If there are multiple reports in 2022, take the latest one
- QUALIFY ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY fiscalPeriod DESC) = 1
-),
-
-Revenue2022 AS (
- SELECT
- ticker,
- totalRevenue AS revenue_2022,
- DATE(date) AS report_date_2022
- FROM \`nexustrade-io.financials.annual_financials\`
- WHERE EXTRACT(YEAR FROM DATE(date)) = 2022
- AND totalRevenue > 20000000000 -- $20B
-),
-
-Revenue2017 AS (
- SELECT
- ticker,
- totalRevenue AS revenue_2017,
- DATE(date) AS report_date_2017
- FROM \`nexustrade-io.financials.annual_financials\`
- WHERE EXTRACT(YEAR FROM DATE(date)) = 2017
- AND totalRevenue > 0 -- Ensure positive revenue for CAGR calculation
-),
-
-CAGR_Calculation AS (
- SELECT
- r22.ticker,
- r22.revenue_2022,
- r17.revenue_2017,
- r22.report_date_2022,
- r17.report_date_2017,
- -- Calculate 5-year CAGR: (End Value / Start Value)^(1/years) - 1
- POWER((r22.revenue_2022 / r17.revenue_2017), 1/5) - 1 AS revenue_cagr_5yr
- FROM Revenue2022 r22
- JOIN Revenue2017 r17 ON r22.ticker = r17.ticker
- WHERE r17.revenue_2017 > 0 -- Additional check for positive starting revenue
-)
-
-SELECT
- bs.ticker,
- sr.rating,
- cc.revenue_2022,
- cc.revenue_2017,
- cc.revenue_cagr_5yr * 100 AS revenue_cagr_5yr_percent,
- cc.report_date_2022,
- cc.report_date_2017
-FROM BiotechStocks bs
-JOIN StockRatings2022 sr ON bs.ticker = sr.ticker
-JOIN CAGR_Calculation cc ON bs.ticker = cc.ticker
-WHERE cc.revenue_cagr_5yr >= 0.1 -- 10% CAGR
-ORDER BY cc.revenue_cagr_5yr DESC
-LIMIT 25
-\`\`\`
-User:
-What AI stocks have the highest 3-yr net income CAGR?
-AI Assistant:
-\`\`\`sql
--- This query identifies AI stocks with the highest 3-year net income CAGR.
--- We first identify stocks in the artificial intelligence industry, then calculate
--- their 3-year CAGR for net income using the most recent annual financial data
--- and the data from 3 years prior.
---
--- Steps:
--- 1. AIStocks CTE: Identify stocks in the artificial intelligence industry
--- 2. LatestAnnualFinancials CTE: Get the most recent annual financial data for each stock
--- 3. ThreeYearsAgoFinancials CTE: Get the annual financial data from 3 years prior
--- 4. CAGR_Calculation CTE: Calculate the 3-year CAGR for net income
--- 5. Final query: Filter for positive CAGR and order by CAGR in descending order
-
-WITH AIStocks AS (
- SELECT DISTINCT ticker
- FROM \`nexustrade-io.stockindustries.current\`
- WHERE artificialIntelligence = TRUE
-),
-
-LatestAnnualFinancials AS (
- SELECT
- ticker,
- netIncome AS latest_net_income,
- DATE(date) AS report_date,
- EXTRACT(YEAR FROM DATE(date)) AS report_year
- FROM (
- SELECT
- ticker,
- netIncome,
- date,
- ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
- FROM \`nexustrade-io.financials.annual_financials\`
- WHERE ticker IN (SELECT ticker FROM AIStocks)
- )
- WHERE rn = 1
- AND netIncome > 0 -- Ensure positive net income for CAGR calculation
-),
-
-ThreeYearsAgoFinancials AS (
- SELECT
- laf.ticker,
- af.netIncome AS three_years_ago_net_income,
- DATE(af.date) AS three_years_ago_date
- FROM LatestAnnualFinancials laf
- JOIN \`nexustrade-io.financials.annual_financials\` af
- ON laf.ticker = af.ticker
- WHERE EXTRACT(YEAR FROM DATE(af.date)) = laf.report_year - 3
- AND af.netIncome > 0 -- Ensure positive net income for CAGR calculation
-),
-
-CAGR_Calculation AS (
- SELECT
- laf.ticker,
- laf.latest_net_income,
- tyaf.three_years_ago_net_income,
- laf.report_date,
- tyaf.three_years_ago_date,
- -- Calculate 3-year CAGR: (End Value / Start Value)^(1/years) - 1
- POWER((laf.latest_net_income / tyaf.three_years_ago_net_income), 1/3) - 1 AS net_income_cagr_3yr
- FROM LatestAnnualFinancials laf
- JOIN ThreeYearsAgoFinancials tyaf ON laf.ticker = tyaf.ticker
-)
-
-SELECT
- cc.ticker,
- cc.latest_net_income,
- cc.three_years_ago_net_income,
- cc.net_income_cagr_3yr * 100 AS net_income_cagr_3yr_percent,
- cc.report_date,
- cc.three_years_ago_date
-FROM CAGR_Calculation cc
-WHERE cc.net_income_cagr_3yr > 0 -- Filter for positive CAGR
-ORDER BY cc.net_income_cagr_3yr DESC
-LIMIT 25
-\`\`\`
-
-====================================================
-
-User:
-What was Bitcoin's average daily return all of last year? It's standard deviation of return?
-User:
-SYSTEM HINT: We need to query for the current year and get all Bitcoin crypto data for all of the year
-AI Assistant:
-\`\`\`sql
--- This query calculates Bitcoin's average daily return and its standard deviation over the full calendar year
--- prior to the year of the last available crypto price data entry. It dynamically determines the target year.
---
--- Steps:
--- 1. LastEntry CTE: Identify the most recent date in the crypto price data for BTC.
--- 2. TargetYear CTE: Extract the year from that latest date and subtract 1 to get the previous calendar year.
--- 3. btc_prices CTE: Retrieve BTC prices for dates where the year matches the target year.
--- 4. btc_daily_returns CTE: Compute the daily returns using the previous day's closingPrice using the LAG window function.
--- 5. Final SELECT: Aggregate the daily returns to return both the average and standard deviation, excluding the first record.
-WITH LastEntry AS (
-  SELECT DATE(MAX(date)) AS last_date
-  FROM \`nexustrade-io.cryptofundamentals.price_data\`
-  WHERE symbol = 'BTC'
-),
-TargetYear AS (
-  SELECT EXTRACT(YEAR FROM last_date) - 1 AS target_year
-  FROM LastEntry
-),
-btc_prices AS (
-  SELECT
-    DATE(date) AS dt,
-    closingPrice
-  FROM \`nexustrade-io.cryptofundamentals.price_data\`
-  WHERE symbol = 'BTC'
-    AND EXTRACT(YEAR FROM DATE(date)) = (SELECT target_year FROM TargetYear)
-),
-btc_daily_returns AS (
-  SELECT
-    dt,
-    closingPrice,
-    (closingPrice / LAG(closingPrice) OVER (ORDER BY dt) - 1) AS daily_return
-  FROM btc_prices
-)
-SELECT
-  AVG(daily_return) AS average_daily_return,
-  STDDEV(daily_return) AS stddev_daily_return
-FROM btc_daily_returns
-WHERE daily_return IS NOT NULL
-LIMIT 25
-\`\`\`
-User:
-Within the past year, how many red days were there? What about green days? What was the magnitude of each?
-User:
-SYSTEM HINT: A red day is a day with a return less than 0. a green day is a return greater than 0
-AI Assistant:
-\`\`\`sql
--- This query calculates Bitcoin's daily returns over the past year (based on the latest available crypto data)
--- and then aggregates:
---   1. The number of red days (daily return < 0)
---   2. The average magnitude (absolute value) of returns on red days
---   3. The number of green days (daily return > 0)
---   4. The average return on green days
---
--- We first determine the latest available date for Bitcoin (symbol 'BTC') in the crypto price data.
--- Then we filter for records within the past 365 days (i.e., one year) up to that latest date.
--- Next, we compute the daily return using the LAG window function.
--- Finally, we aggregate the counts and average magnitudes for red and green days.
-WITH LastEntry AS (
-  SELECT DATE(MAX(date)) AS last_date
-  FROM \`nexustrade-io.cryptofundamentals.price_data\`
-  WHERE symbol = 'BTC'
-),
-PastYearBTC AS (
-  SELECT
-    DATE(date) AS dt,
-    closingPrice
-  FROM \`nexustrade-io.cryptofundamentals.price_data\`
-  WHERE symbol = 'BTC'
-    AND DATE(date) BETWEEN DATE_SUB((SELECT last_date FROM LastEntry), INTERVAL 365 DAY)
-                        AND (SELECT last_date FROM LastEntry)
-),
-DailyReturns AS (
-  SELECT
-    dt,
-    closingPrice,
-    (closingPrice / LAG(closingPrice) OVER (ORDER BY dt) - 1) AS daily_return
-  FROM PastYearBTC
-)
-SELECT
-  SUM(CASE WHEN daily_return < 0 THEN 1 ELSE 0 END) AS red_day_count,
-  AVG(CASE WHEN daily_return < 0 THEN ABS(daily_return) END) AS avg_red_magnitude,
-  SUM(CASE WHEN daily_return > 0 THEN 1 ELSE 0 END) AS green_day_count,
-  AVG(CASE WHEN daily_return > 0 THEN daily_return END) AS avg_green_magnitude
-FROM DailyReturns
-WHERE daily_return IS NOT NULL
-LIMIT 25
-\`\`\`
-User:
-within the past two years, if Apple is down more than 4% in a week, what is the likelihood it will be down another 4% the following week?
-AI Assistant:
-\`\`\`sql
--- This query examines AAPL's weekly returns over the past two years to determine, 
--- if in a given week AAPL was down more than 4%, what is the likelihood it was down more than 4% the following week.
---
--- Steps:
--- 1. LastEntry CTE: Determine the most recent date for AAPL in the price data.
--- 2. Past2Years CTE: Calculate the start date (2 years ago from the last date) to filter the data.
--- 3. DailyData CTE: Retrieve daily closing prices for AAPL within the past two years and assign each day to a week.
--- 4. WeekAgg CTE: For each week (using DATE_TRUNC with WEEK(MONDAY)), identify the first (start_day) and last (end_day) trading day.
--- 5. FirstLast CTE: Join the daily data back to get the closing price on the start_day and end_day for each week.
--- 6. WeeklyReturns CTE: Calculate the weekly return as (last_price/first_price - 1) for each week.
--- 7. Condition CTE: Use the LEAD window function to pair each week with its following week’s return.
--- 8. Final SELECT: Among weeks where the return was less than -4% (down more than 4%), calculate:
---    - The total number of such weeks.
---    - The number of those weeks where the following week was also down more than 4%.
---    - The likelihood (as a percentage) that a week down more than 4% is followed by another week down more than 4%.
-
--- This query examines AAPL's weekly returns over the past two years to determine, 
--- if in a given week AAPL was down more than 4%, what is the likelihood it was down more than 4% the following week.
---
--- Steps:
--- 1. LastEntry CTE: Determine the most recent date for AAPL in the price data.
--- 2. Past2Years CTE: Calculate the start date (2 years ago from the last date) to filter the data.
--- 3. DailyData CTE: Retrieve daily closing prices for AAPL within the past two years and assign each day to a week.
--- 4. WeekAgg CTE: For each week (using DATE_TRUNC with WEEK(MONDAY)), identify the first (start_day) and last (end_day) trading day.
--- 5. FirstLast CTE: Join the daily data back to get the closing price on the start_day and end_day for each week.
--- 6. WeeklyReturns CTE: Calculate the weekly return as (last_price/first_price - 1) for each week.
--- 7. Condition CTE: Use the LEAD window function to pair each week with its following week’s return.
--- 8. Final SELECT: Among weeks where the return was less than -4% (down more than 4%), calculate:
---    - The total number of such weeks.
---    - The number of those weeks where the following week was also down more than 4%.
---    - The likelihood (as a percentage) that a week down more than 4% is followed by another week down more than 4%.
-WITH LastEntry AS (
-  SELECT
-    DATE(MAX(date)) AS last_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-  WHERE ticker = 'AAPL'
-),
-Past2Years AS (
-  SELECT
-    DATE_SUB(last_date, INTERVAL 2 YEAR) AS start_date,
-    last_date
-  FROM LastEntry
-),
-DailyData AS (
-  SELECT
-    DATE(date) AS day,
-    lastClosingPrice,
-    DATE_TRUNC(DATE(date), WEEK(MONDAY)) AS week_start
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-  WHERE ticker = 'AAPL'
-    AND DATE(date) BETWEEN (SELECT start_date FROM Past2Years)
-                       AND (SELECT last_date FROM LastEntry)
-),
-WeekAgg AS (
-  SELECT
-    week_start,
-    MIN(day) AS start_day,
-    MAX(day) AS end_day
-  FROM DailyData
-  GROUP BY week_start
-),
-FirstLast AS (
-  SELECT
-    w.week_start,
-    d_first.lastClosingPrice AS first_price,
-    d_last.lastClosingPrice AS last_price
-  FROM WeekAgg w
-  JOIN DailyData d_first 
-    ON d_first.week_start = w.week_start AND d_first.day = w.start_day
-  JOIN DailyData d_last 
-    ON d_last.week_start = w.week_start AND d_last.day = w.end_day
-),
-WeeklyReturns AS (
-  SELECT
-    week_start,
-    first_price,
-    last_price,
-    (last_price / first_price - 1) AS weekly_return
-  FROM FirstLast
-),
-Condition AS (
-  SELECT
-    week_start,
-    weekly_return,
-    LEAD(weekly_return) OVER (ORDER BY week_start) AS next_week_return
-  FROM WeeklyReturns
-)
-SELECT
-  COUNT(*) AS total_weeks_down_over_4,
-  SUM(CASE WHEN next_week_return < -0.04 THEN 1 ELSE 0 END) AS weeks_followed_by_down_over_4,
-  SAFE_DIVIDE(100 * SUM(CASE WHEN next_week_return < -0.04 THEN 1 ELSE 0 END), COUNT(*)) AS likelihood_percentage
-FROM Condition
-WHERE weekly_return < -0.04
-\`\`\`
-
-====================================================
-
-User:
-What stocks in the Dow Jones have the lowest PE ratio?
-User:
-SYSTEM HINT: DJI is not yet supported. Explain that the S&P 500 and the Dow will be soon. Ask if you should lookup the S&P 500 instead
-AI Assistant:
-I am sorry, I cannot fulfill that request. The Dow Jones is not yet supported. Would you like me to look up the S&P 500 instead? The S&P 500 is a good proxy for the entire market.
-
-
-====================================================
-
-User:
-What stocks are above their 7 day SMA, their 50 day SMA, and their 200 day SMA? Return the top 5 best AI stocks, cryptocurrency stocks, EV stocks, and gaming stocks that fit this criteria
-AI Assistant:
-\`\`\`sql
--- This query calculates the 7-day, 50-day, and 200-day simple moving averages (SMA) for each stock 
--- using the latest available price data from the universalstockfundamentals.price_data table.
--- It then filters for stocks whose current lastClosingPrice exceeds all three SMAs.
--- After that, it joins with the stockindustries.current table to filter for stocks in one of four categories:
---    Artificial Intelligence (artificialIntelligence = TRUE)
---    Cryptocurrency (cryptocurrency = TRUE)
---    Electric Vehicle (electricVehicle = TRUE)
---    Gaming (gaming = TRUE)
--- For each category we rank stocks based on the percentage difference between lastClosingPrice 
--- and the 200-day SMA (i.e. (lastClosingPrice - sma200) / sma200) and return the top 5 per category.
---
--- We wrap each category's query in parentheses to allow ORDER BY and LIMIT inside Union ALL.
--- We also ensure we only return distinct tickers.
-WITH LatestDate AS (
-  -- Get the latest available date (converted to a date) in the universal stock fundamentals price data.
-  SELECT DATE(MAX(date)) AS latest_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-),
-LatestPrice AS (
-  -- Get the latest price record for each ticker on the latest available date.
-  SELECT
-    ticker,
-    lastClosingPrice,
-    DATE(date) AS price_date
-  FROM \`nexustrade-io.universalstockfundamentals.price_data\`, LatestDate
-  WHERE DATE(date) = LatestDate.latest_date
-),
-SMA_Calc AS (
-  -- For each ticker from LatestPrice, calculate the 7-day, 50-day, and 200-day SMAs.
-  SELECT
-    lp.ticker,
-    lp.lastClosingPrice,
-    (SELECT AVG(p7.lastClosingPrice)
-     FROM \`nexustrade-io.universalstockfundamentals.price_data\` p7, LatestDate
-     WHERE p7.ticker = lp.ticker
-       AND DATE(p7.date) BETWEEN DATE_SUB(LatestDate.latest_date, INTERVAL 6 DAY) AND LatestDate.latest_date
-    ) AS sma7,
-    (SELECT AVG(p50.lastClosingPrice)
-     FROM \`nexustrade-io.universalstockfundamentals.price_data\` p50, LatestDate
-     WHERE p50.ticker = lp.ticker
-       AND DATE(p50.date) BETWEEN DATE_SUB(LatestDate.latest_date, INTERVAL 49 DAY) AND LatestDate.latest_date
-    ) AS sma50,
-    (SELECT AVG(p200.lastClosingPrice)
-     FROM \`nexustrade-io.universalstockfundamentals.price_data\` p200, LatestDate
-     WHERE p200.ticker = lp.ticker
-       AND DATE(p200.date) BETWEEN DATE_SUB(LatestDate.latest_date, INTERVAL 199 DAY) AND LatestDate.latest_date
-    ) AS sma200
-  FROM LatestPrice lp
-),
-SMA_Filtered AS (
-  -- Filter for stocks whose current price is above the 7-day, 50-day, and 200-day SMAs.
-  SELECT
-    ticker,
-    lastClosingPrice,
-    sma7,
-    sma50,
-    sma200,
-    ((lastClosingPrice - sma200) / sma200) AS percent_above_200
-  FROM SMA_Calc
-  WHERE lastClosingPrice > sma7
-    AND lastClosingPrice > sma50
-    AND lastClosingPrice > sma200
-)
--- For each category, join with the stockindustries table and then select the top 5 stocks based on percent_above_200.
-(
-  SELECT
-    'Artificial Intelligence' AS category,
-    s.ticker,
-    s.lastClosingPrice,
-    s.sma7,
-    s.sma50,
-    s.sma200,
-    s.percent_above_200
-  FROM SMA_Filtered s
-  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
-  WHERE si.artificialIntelligence = TRUE
-  ORDER BY s.percent_above_200 DESC
-  LIMIT 5
-)
-UNION ALL
-(
-  SELECT
-    'Cryptocurrency' AS category,
-    s.ticker,
-    s.lastClosingPrice,
-    s.sma7,
-    s.sma50,
-    s.sma200,
-    s.percent_above_200
-  FROM SMA_Filtered s
-  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
-  WHERE si.cryptocurrency = TRUE
-  ORDER BY s.percent_above_200 DESC
-  LIMIT 5
-)
-UNION ALL
-(
-  SELECT
-    'Electric Vehicle' AS category,
-    s.ticker,
-    s.lastClosingPrice,
-    s.sma7,
-    s.sma50,
-    s.sma200,
-    s.percent_above_200
-  FROM SMA_Filtered s
-  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
-  WHERE si.electricVehicle = TRUE
-  ORDER BY s.percent_above_200 DESC
-  LIMIT 5
-)
-UNION ALL
-(
-  SELECT
-    'Gaming' AS category,
-    s.ticker,
-    s.lastClosingPrice,
-    s.sma7,
-    s.sma50,
-    s.sma200,
-    s.percent_above_200
-  FROM SMA_Filtered s
-  JOIN \`nexustrade-io.stockindustries.current\` si ON s.ticker = si.ticker
-  WHERE si.gaming = TRUE
-  ORDER BY s.percent_above_200 DESC
-  LIMIT 5
-)
-\`\`\`
-
-====================================================
-
-User:
-what tech stocks were great before 2021 and suck now?
-User:
-SYSTEM HINT: Great can be intrepreted as having a rating of 3.5+ and suck can be interpreted as rating of 2-. We can use \`nexustrade-io.universalstockfundamentals.reports\` to find approximations of stocks fundamental performance. Tech stocks have an industry of "technology"
-
-Remember, we don't use MAX(Year); to find stocks that suck now, look at the last available data for all stocks
-AI Assistant:
-\`\`\`sql
--- The goal of this query is to find tech stocks (from the stockindustries table where technology = TRUE)
--- that had at least one "great" report (rating >= 3.5) in a fiscal year before 2021,
--- but whose most recent report shows a "suck" rating (rating <= 2).
--- We achieve this in three steps:
---
--- 1. TechStocks CTE: Retrieve all tickers categorized as technology stocks.
--- 2. GreatHistorical CTE: For each tech stock, select the single historical report (from before 2021)
---    where the rating was at least 3.5. We pick the best report per ticker (highest rating, then most recent fiscal year and period)
--- 3. LatestReport CTE: For each tech stock, select the latest available report (using fiscalYear and fiscalPeriod)
---    and filter those with a rating of 2 or less.
---
--- Finally, we join the two CTEs on ticker so that only the stocks with a "great" historical report and a "suck" current report are returned.
--- We use grouping and window functions to ensure that each ticker appears only once.
---
-WITH TechStocks AS (
-  SELECT DISTINCT ticker
-  FROM \`nexustrade-io.stockindustries.current\`
-  WHERE technology = TRUE
-),
-GreatHistorical AS (
-  -- Select one historical report per ticker (fiscalYear < 2021 with rating >= 3.5)
-  SELECT ticker, fiscalYear, fiscalPeriod, rating
-  FROM (
-    SELECT 
-      ticker,
-      fiscalYear,
-      fiscalPeriod,
-      rating,
-      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY rating DESC, fiscalYear DESC, fiscalPeriod DESC) AS rn
-    FROM \`nexustrade-io.universalstockfundamentals.reports\`
-    WHERE ticker IN (SELECT ticker FROM TechStocks)
-      AND fiscalYear < 2021
-      AND rating >= 3.5
-  )
-  WHERE rn = 1
-),
-LatestReport AS (
-  -- Select the latest available report per ticker (using fiscalYear and fiscalPeriod ordering)
-  SELECT ticker, fiscalYear AS currentFiscalYear, fiscalPeriod AS currentFiscalPeriod, rating AS currentRating
-  FROM (
-    SELECT 
-      ticker,
-      fiscalYear,
-      fiscalPeriod,
-      rating,
-      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
-    FROM \`nexustrade-io.universalstockfundamentals.reports\`
-    WHERE ticker IN (SELECT ticker FROM TechStocks)
-  )
-  WHERE rn = 1
-    AND rating <= 2
-)
--- Join the two CTEs on ticker to get those stocks that were great historically but now suck.
-SELECT
-  lr.ticker,
-  lr.currentFiscalYear,
-  lr.currentFiscalPeriod,
-  lr.currentRating,
-  gh.fiscalYear AS historicalFiscalYear,
-  gh.fiscalPeriod AS historicalFiscalPeriod,
-  gh.rating AS historicalRating
-FROM LatestReport lr
-JOIN GreatHistorical gh ON lr.ticker = gh.ticker
-ORDER BY lr.currentRating ASC
-LIMIT 25
-\`\`\`
-User:
-what are the worse stocks in the market with a market cap above $100 billion
-User:
-SYSTEM HINT: Look at all CURRENT stocks with the market cap and sort by rating
-AI Assistant:
-\`\`\`sql
--- This query identifies stocks with a market capitalization above $100 billion (i.e. > 100,000,000,000)
--- and then joins with the latest available fundamental reports to sort the stocks by their rating
--- in ascending order (i.e. the lower the rating, the "worse" the stock).
---
--- Step 1: LatestDate CTE retrieves the most recent date from the price_data table.
--- Step 2: LatestPrice CTE selects stocks from the universalstockfundamentals.price_data table as of that date,
--- filtering for those with marketCap > $100B.
--- Step 3: LatestReport CTE selects the most recent fundamental report for each stock from the reports table,
--- using fiscalYear and fiscalPeriod to determine the latest report.
--- Finally, we join LatestPrice with LatestReport on ticker, ensuring that each ticker appears only once.
---
--- Note: We convert the timestamp in the price_data table to a date for comparison.
-WITH LatestDate AS (
-  SELECT
-    DATE(MAX(date)) AS latest_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\`
-),
-LatestPrice AS (
-  SELECT
-    ticker,
-    marketCap,
-    DATE(date) AS price_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\`
-  WHERE
-    DATE(date) = (SELECT latest_date FROM LatestDate)
-    AND marketCap > 100000000000
-),
-LatestReport AS (
-  SELECT
-    ticker,
-    rating,
-    fiscalYear,
-    fiscalPeriod
-  FROM (
-    SELECT
-      ticker,
-      rating,
-      fiscalYear,
-      fiscalPeriod,
-      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
-    FROM
-      \`nexustrade-io.universalstockfundamentals.reports\`
-  )
-  WHERE rn = 1
-)
-SELECT
-  lp.ticker,
-  lp.marketCap,
-  lp.price_date,
-  lr.fiscalYear AS reportFiscalYear,
-  lr.fiscalPeriod AS reportFiscalPeriod,
-  lr.rating
-FROM
-  LatestPrice lp
-JOIN
-  LatestReport lr
-ON
-  lp.ticker = lr.ticker
-ORDER BY
-  lr.rating ASC
-LIMIT 25
-\`\`\`
-User:
-What are the best stocks in history?
-User:
-SYSTEM HINT: Get the best stocks across all time and sort by rating descending 
-AI Assistant:
-\`\`\`sql
--- The goal of this query is to retrieve the best stocks across all time based on their
--- highest fundamental ratings. We consider all available reports and for each stock
--- we select the report with the highest rating. Then, the stocks are sorted in descending
--- order based on that highest rating.
---
--- 1. We use a CTE (BestReports) to rank each stock's reports by rating (and by fiscalYear and fiscalPeriod descending)
--- so that each ticker gets its best historical report.
--- 2. We then select only the top report (rn = 1) per ticker and sort the results in descending order by rating.
--- 3. We include the ticker, fiscalYear, fiscalPeriod, and the rating used in our calculation.
---
--- This approach ensures that each ticker appears only once in the result.
-WITH BestReports AS (
-  SELECT
-    ticker,
-    fiscalYear,
-    fiscalPeriod,
-    rating,
-    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY rating DESC, fiscalYear DESC, fiscalPeriod DESC) AS rn
-  FROM
-    \`nexustrade-io.universalstockfundamentals.reports\`
-)
-SELECT
-  ticker,
-  fiscalYear,
-  fiscalPeriod,
-  rating AS bestRating
-FROM
-  BestReports
-WHERE
-  rn = 1
-ORDER BY
-  rating DESC
-LIMIT 25
-\`\`\`
+Once I understand your goals, I can generate the appropriate SQL query.
 
 ====================================================
 
@@ -2423,381 +2014,1429 @@ LIMIT 20;
 ====================================================
 
 User:
-Find me stocks with a dividend yield above 3% and a debt equity ratio less than 0.4
+What stocks in the Dow Jones have the lowest PE ratio?
+User:
+SYSTEM HINT: DJI is not yet supported. Explain that the S&P 500 and the Dow will be soon. Ask if you should lookup the S&P 500 instead
 AI Assistant:
-\`\`\`sql
--- This query finds stocks with a dividend yield above 3% and a debt-to-equity ratio (totalLiab / totalStockholderEquity)
--- below 0.4. We obtain the latest dividend yield from the latest price_data record and the latest financial 
--- data from the quarterly table. We then join them by ticker to filter the results accordingly.
---
--- Step 1: LatestPrice CTE gets, for each ticker, the most recent price data (converted to a date) and its dividendYield.
--- Step 2: LatestFinancials CTE ranks quarterly financial records by date (converted to date) per ticker, and selects the latest record.
--- Step 3: In the final query, we join these two CTEs and calculate the debt-to-equity ratio as (totalLiab / totalStockholderEquity). 
---         Only stocks with dividendYield > 3% and debt-to-equity ratio < 0.4 are returned.
---
--- Note: To ensure unique stocks we aggregate by ticker, and we use a default limit of 25.
-WITH LatestPrice AS (
-  SELECT
-    p.ticker,
-    p.dividendYield,
-    DATE(p.date) AS price_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\` AS p
-  WHERE
-    DATE(p.date) = (
-      SELECT DATE(MAX(date))
-      FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-    )
-),
-LatestFinancials AS (
-  SELECT
-    ticker,
-    totalLiab,
-    totalStockholderEquity,
-    DATE(date) AS report_date
-  FROM (
-    SELECT
-      ticker,
-      totalLiab,
-      totalStockholderEquity,
-      date,
-      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
-    FROM
-      \`nexustrade-io.financials.quarterly_financials\`
-  )
-  WHERE rn = 1
-)
-SELECT
-  lp.ticker,
-  lp.dividendYield,
-  lf.totalLiab,
-  lf.totalStockholderEquity,
-  (lf.totalLiab / lf.totalStockholderEquity) AS debt_to_equity_ratio,
-  lp.price_date,
-  lf.report_date
-FROM
-  LatestPrice lp
-JOIN
-  LatestFinancials lf
-ON
-  lp.ticker = lf.ticker
-WHERE
-  lp.dividendYield > 0.03
-  AND (lf.totalLiab / lf.totalStockholderEquity) < 0.4
-ORDER BY
-  lp.dividendYield DESC
-LIMIT 25
-\`\`\`
-AI Assistant:
-ERROR:  division by zero: 7.8946e+10 / 0 
+I am sorry, I cannot fulfill that request. The Dow Jones is not yet supported. Would you like me to look up the S&P 500 instead? The S&P 500 is a good proxy for the entire market.
 
-Also, we should sum the short and long-term debts
+
+====================================================
+
+User:
+Get 10 random stocks with a ranking of 4.5+, 10 random stocks with a ranking of 4 to 4.49, and 10 with a ranking of 3 to 3.99
+User:
+SYSTEM HINT: Random means truly random. You MUST use  RAND(). There should be 30 results (max) in total
 AI Assistant:
 \`\`\`sql
--- This query finds stocks with a dividend yield above 3% and a debt-to-equity ratio (calculated as
--- (shortTermDebt + longTermDebt) / totalStockholderEquity) below 0.4.
+-- This query retrieves 30 stocks in total, divided into three rating categories:
+-- 1. 10 random stocks with a rating of 4.5 or higher
+-- 2. 10 random stocks with a rating between 4.0 and 4.49
+-- 3. 10 random stocks with a rating between 3.0 and 3.99
 --
--- Step 1: LatestPrice CTE retrieves the most recent price data (converted to date) along with dividendYield.
--- Step 2: LatestFinancials CTE obtains the latest quarterly financial metrics per ticker, including shortTermDebt,
--- longTermDebt, and totalStockholderEquity. We include only records where totalStockholderEquity is greater than 0
--- to avoid division by zero.
--- Step 3: In the final query, we compute the debt-to-equity ratio and filter for stocks with dividendYield > 3%
--- and the computed ratio < 0.4.
-WITH LatestPrice AS (
-  SELECT
-    p.ticker,
-    p.dividendYield,
-    DATE(p.date) AS price_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\` AS p
-  WHERE
-    DATE(p.date) = (
-      SELECT DATE(MAX(date))
-      FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-    )
+-- We use CTEs to find the most recent report for each ticker in each rating category,
+-- then randomize the selection and limit to 10 stocks per category.
+-- The results are combined using UNION ALL.
+
+WITH HighRatedStocks AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
+ FROM
+ \`nexustrade-io.universalstockfundamentals.reports\`
+ WHERE
+ rating >= 4.5
 ),
-LatestFinancials AS (
-  SELECT
-    ticker,
-    shortTermDebt,
-    longTermDebt,
-    totalStockholderEquity,
-    DATE(date) AS report_date
-  FROM (
-    SELECT
-      ticker,
-      shortTermDebt,
-      longTermDebt,
-      totalStockholderEquity,
-      date,
-      ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
-    FROM
-      \`nexustrade-io.financials.quarterly_financials\`
-  )
-  WHERE rn = 1
-    AND totalStockholderEquity > 0  -- avoid division by zero
+MediumHighRatedStocks AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
+ FROM
+ \`nexustrade-io.universalstockfundamentals.reports\`
+ WHERE
+ rating >= 4.0 AND rating < 4.5
+),
+MediumRatedStocks AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
+ FROM
+ \`nexustrade-io.universalstockfundamentals.reports\`
+ WHERE
+ rating >= 3.0 AND rating < 4.0
+),
+HighRandom AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ 'High (4.5+)' AS rating_category
+ FROM
+ HighRatedStocks
+ WHERE
+ rn = 1
+ ORDER BY
+ RAND()
+ LIMIT 10
+),
+MediumHighRandom AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ 'Medium-High (4.0-4.49)' AS rating_category
+ FROM
+ MediumHighRatedStocks
+ WHERE
+ rn = 1
+ ORDER BY
+ RAND()
+ LIMIT 10
+),
+MediumRandom AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ 'Medium (3.0-3.99)' AS rating_category
+ FROM
+ MediumRatedStocks
+ WHERE
+ rn = 1
+ ORDER BY
+ RAND()
+ LIMIT 10
+)
+SELECT * FROM HighRandom
+UNION ALL
+SELECT * FROM MediumHighRandom
+UNION ALL
+SELECT * FROM MediumRandom
+\`\`\`
+User:
+Get 30 random stocks with a ranking of 3
+AI Assistant:
+\`\`\`sql
+-- This query retrieves 30 random stocks that have a rating of exactly 3.0.
+-- We first identify the latest report for each ticker with a rating of 3.0,
+-- then randomly select 30 of these stocks.
+--
+-- The approach:
+-- 1. Filter the reports table for entries with a rating of exactly 3.0
+-- 2. For each ticker, select only the most recent report (using fiscalYear and fiscalPeriod)
+-- 3. Randomize the results using RAND()
+-- 4. Limit to 30 stocks
+
+WITH RatedStocks AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) AS rn
+ FROM
+ \`nexustrade-io.universalstockfundamentals.reports\`
+ WHERE
+ rating = 3.0
 )
 SELECT
-  lp.ticker,
-  lp.dividendYield,
-  lf.shortTermDebt,
-  lf.longTermDebt,
-  lf.totalStockholderEquity,
-  (lf.shortTermDebt + lf.longTermDebt) AS total_debt,
-  ((lf.shortTermDebt + lf.longTermDebt) / lf.totalStockholderEquity) AS debt_to_equity_ratio,
-  lp.price_date,
-  lf.report_date
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating
 FROM
-  LatestPrice lp
-JOIN
-  LatestFinancials lf
-ON
-  lp.ticker = lf.ticker
+ RatedStocks
 WHERE
-  lp.dividendYield > 0.03
-  AND ((lf.shortTermDebt + lf.longTermDebt) / lf.totalStockholderEquity) < 0.4
+ rn = 1
 ORDER BY
-  lp.dividendYield DESC
-LIMIT 25
+ RAND()
+LIMIT 30
 \`\`\`
 
 ====================================================
 
 User:
-Perform financial analysis
+Analyze GME's last earnings
 User:
-SYSTEM HINT: We need more details. The user is probably newer, so let's guide them through how to perform financial analysis
+SYSTEM HINT: Query for the last 4 quarters of financials/EPS and last 4 years and compare it to the most recent quarterly earnings
 AI Assistant:
-What specific financial analysis are you hoping to perform? For example, are you interested in:
+\`\`\`sql
+-- This query analyzes GME's (GameStop) latest earnings by examining:
+-- 1. The most recent quarterly earnings report
+-- 2. The previous 3 quarterly earnings reports for quarter-over-quarter comparison
+-- 3. Annual financial data for the past 4 fiscal years for long-term trend analysis
+--
+-- We'll look at key metrics like revenue, net income, EPS, and free cash flow.
 
-1.  **Stock Screening:** Identifying stocks that meet certain criteria (e.g., dividend yield, debt-to-equity ratio, market capitalization, industry)?
-2.  **Performance Analysis:** Comparing the performance of different stocks or industries over a specific period?
-3.  **Trend Analysis:** Identifying stocks with increasing revenue, net income, or free cash flow over time?
-4.  **Risk Analysis:** Determining the volatility of a stock or cryptocurrency?
-5.  **Moving Averages:** Finding stocks above their simple moving averages?
+WITH LatestQuarterlyEarnings AS (
+ SELECT
+ ticker,
+ DATE(date) AS report_date,
+ epsActual,
+ epsDifference,
+ surprisePercent,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn
+ FROM
+ \`nexustrade-io.financials.quarterly_earnings\`
+ WHERE
+ ticker = 'GME'
+ AND epsActual IS NOT NULL
+),
 
-Once I understand your goals, I can generate the appropriate SQL query.
+-- Get the previous 4 quarters of earnings data
+Recent4QuartersEarnings AS (
+ SELECT
+ ticker,
+ DATE(date) AS report_date,
+ epsActual,
+ epsDifference,
+ surprisePercent,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS quarter_rank
+ FROM
+ \`nexustrade-io.financials.quarterly_earnings\`
+ WHERE
+ ticker = 'GME'
+ AND epsActual IS NOT NULL
+ LIMIT 4
+),
+
+-- Get the most recent 4 quarters of financial data
+Recent4QuartersFinancials AS (
+ SELECT
+ ticker,
+ DATE(date) AS report_date,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ grossProfit,
+ operatingIncome,
+ totalLiab,
+ totalStockholderEquity,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS quarter_rank
+ FROM
+ \`nexustrade-io.financials.quarterly_financials\`
+ WHERE
+ ticker = 'GME'
+ LIMIT 4
+),
+
+-- Get the annual financial data for the past 4 fiscal years
+Recent4YearsFinancials AS (
+ SELECT
+ ticker,
+ DATE(date) AS report_date,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ grossProfit,
+ operatingIncome,
+ totalLiab,
+ totalStockholderEquity,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS year_rank
+ FROM
+ \`nexustrade-io.financials.annual_financials\`
+ WHERE
+ ticker = 'GME'
+ LIMIT 4
+),
+
+-- Combine quarterly earnings with quarterly financials
+QuarterlyData AS (
+ SELECT
+ 'Quarterly Data' AS data_type,
+ qe.quarter_rank,
+ qe.ticker,
+ qe.report_date,
+ qe.epsActual,
+ qe.epsDifference,
+ qe.surprisePercent,
+ qf.totalRevenue,
+ qf.netIncome,
+ qf.freeCashFlow,
+ qf.grossProfit,
+ qf.operatingIncome,
+ qf.totalLiab,
+ qf.totalStockholderEquity,
+ (qf.totalLiab / NULLIF(qf.totalStockholderEquity, 0)) AS debt_to_equity_ratio,
+ (qf.grossProfit / NULLIF(qf.totalRevenue, 0)) * 100 AS gross_margin_pct,
+ (qf.netIncome / NULLIF(qf.totalRevenue, 0)) * 100 AS net_margin_pct
+ FROM
+ Recent4QuartersEarnings qe
+ JOIN
+ Recent4QuartersFinancials qf
+ ON
+ qe.quarter_rank = qf.quarter_rank
+),
+
+-- Format annual data
+AnnualData AS (
+ SELECT
+ 'Annual Data' AS data_type,
+ year_rank AS quarter_rank,
+ ticker,
+ report_date,
+ NULL AS epsActual,
+ NULL AS epsDifference,
+ NULL AS surprisePercent,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ grossProfit,
+ operatingIncome,
+ totalLiab,
+ totalStockholderEquity,
+ (totalLiab / NULLIF(totalStockholderEquity, 0)) AS debt_to_equity_ratio,
+ (grossProfit / NULLIF(totalRevenue, 0)) * 100 AS gross_margin_pct,
+ (netIncome / NULLIF(totalRevenue, 0)) * 100 AS net_margin_pct
+ FROM
+ Recent4YearsFinancials
+)
+
+-- Combine quarterly and annual data
+SELECT * FROM QuarterlyData
+UNION ALL
+SELECT * FROM AnnualData
+ORDER BY data_type, quarter_rank
+\`\`\`
 
 ====================================================
 
 User:
-Which non-technology stocks have a price to book value ratio above 10 and a market cap above $50 billion?
+What companies with a market cap above $100 billion have an RSI below 25?
 User:
-SYSTEM HINT: For non-technology stocks, we want to look for stocks that have technology as null
+# SYSTEM HINT: You must calculate it from the price data. You MUST make sure to look at the latest price data per stock
 AI Assistant:
-\`\`\`sql
--- The query below retrieves non-technology stocks (i.e. those where the "technology" field is NULL)
--- that have a price-to-book value ratio (TTM) above 10 and a market capitalization above $50 billion.
--- We first determine the latest date in the price_data table, then filter rows from the price_data table
--- based on the required criteria and join with the stockindustries table to ensure that 'technology' is NULL.
--- We use DISTINCT on ticker to avoid duplicate entries.
+\`\`\`
+-- This query identifies large-cap companies (market cap > $100 billion) with an RSI below 25,
+-- indicating they may be oversold according to this technical indicator.
+--
+-- RSI (Relative Strength Index) calculation follows these steps:
+-- 1. Get price data for the last 30 days (to have enough for 14-day RSI)
+-- 2. Calculate daily price changes
+-- 3. Separate gains (up days) and losses (down days)
+-- 4. Calculate the average gain and average loss over 14 periods
+-- 5. Calculate RS (Relative Strength) = average gain / average loss
+-- 6. Calculate RSI = 100 - (100 / (1 + RS))
+-- 7. Filter for stocks with RSI < 25 (oversold condition)
 
+-- Step 1: Find the latest date in the price data
 WITH LatestDate AS (
-  SELECT
-    DATE(MAX(date)) AS latest_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\`
+  SELECT DATE(MAX(date)) AS latest_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`
 ),
-LatestPrice AS (
-  SELECT
-    ticker,
-    priceToBookValueTTM,
-    marketCap,
-    DATE(date) AS price_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\`
-  WHERE
-    DATE(date) = (SELECT latest_date FROM LatestDate)
-    AND priceToBookValueTTM > 10
-    AND marketCap > 50000000000
-)
-SELECT DISTINCT
-  lp.ticker,
-  lp.priceToBookValueTTM,
-  lp.marketCap,
-  lp.price_date
-FROM
-  LatestPrice lp
-JOIN
-  \`nexustrade-io.stockindustries.current\` si
-ON
-  lp.ticker = si.ticker
-WHERE
-  si.technology IS NULL
-ORDER BY
-  lp.priceToBookValueTTM DESC
-LIMIT 25
-\`\`\`
-User:
-What biology-related stocks had the largest revenue increase since last year?
-User:
-SYSTEM HINT: we need to look at all of the industries related to biology. Also, we want to look at revenue for each stock 5 entries ago and compare it to the most recent revenue for each stock (in the quarterly table)
-AI Assistant:
-\`\`\`sql
--- The query below identifies biology-related stocks that experienced the largest increase in 
--- quarterly total revenue from the report 5 entries ago (older report) to the most recent report.
--- We first rank the quarterly financial records by date (converted to date) for each stock.
--- Then, for each ticker, we select the most recent record (rn = 1) and the record that is 5 entries ago (rn = 5).
--- We calculate the revenue increase as the difference between the two totalRevenue values.
--- Finally, we join with the stockindustries table and filter for biology-related stocks by checking
--- if any of the fields (bioinformatics, biotechnology, computationalBiology) are TRUE, ensuring the results 
--- are unique by ticker, and order them by the revenue increase in descending order.
 
-WITH RankedFinancials AS (
+-- Step 2: Identify stocks with market cap > $100 billion on the latest date
+LargeCaps AS (
+  SELECT ticker
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\`, LatestDate
+  WHERE DATE(date) = LatestDate.latest_date
+  AND marketCap > 100000000000 -- $100 billion
+),
+
+-- Step 3: Get the last 30 trading days of price data for large-cap stocks
+-- We use ROW_NUMBER to rank days (newest = 1) to ensure we're using trading days, not calendar days
+PriceData AS (
+  SELECT 
+    p.ticker,
+    DATE(p.date) AS price_date,
+    p.lastClosingPrice,
+    p.marketCap,
+    ROW_NUMBER() OVER (PARTITION BY p.ticker ORDER BY DATE(p.date) DESC) AS day_rank
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\` p
+  JOIN LargeCaps lc ON p.ticker = lc.ticker
+  JOIN LatestDate ld ON DATE(p.date) <= ld.latest_date AND DATE(p.date) > DATE_SUB(ld.latest_date, INTERVAL 30 DAY)
+),
+
+-- Step 4: Calculate daily price changes for each stock
+-- We join consecutive days using the day_rank to calculate price changes
+PriceChanges AS (
+  SELECT
+    a.ticker,
+    a.price_date,
+    a.lastClosingPrice,
+    a.marketCap,
+    a.day_rank,
+    (a.lastClosingPrice - b.lastClosingPrice) AS price_change
+  FROM PriceData a
+  JOIN PriceData b ON a.ticker = b.ticker AND a.day_rank = b.day_rank - 1
+  WHERE a.day_rank <= 15  -- We need 14 changes (requires 15 prices)
+),
+
+-- Step 5: Separate gains and losses
+-- For each day, classify price change as either a gain (positive) or loss (negative)
+GainsLosses AS (
   SELECT
     ticker,
-    totalRevenue,
-    DATE(date) AS report_date,
-    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
-  FROM
-    \`nexustrade-io.financials.quarterly_financials\`
+    price_date,
+    day_rank,
+    CASE WHEN price_change > 0 THEN price_change ELSE 0 END AS gain,
+    CASE WHEN price_change < 0 THEN ABS(price_change) ELSE 0 END AS loss
+  FROM PriceChanges
 ),
-LatestRevenue AS (
+
+-- Step 6: Calculate average gains and average losses over the 14-day period
+-- Standard RSI uses a simple average for the first calculation
+FirstAvg AS (
   SELECT
     ticker,
-    totalRevenue AS latestRevenue,
-    report_date AS latestReportDate
-  FROM
-    RankedFinancials
-  WHERE
-    rn = 1
+    AVG(gain) AS avg_gain,
+    AVG(loss) AS avg_loss
+  FROM GainsLosses
+  WHERE day_rank <= 14
+  GROUP BY ticker
 ),
-EarlierRevenue AS (
+
+-- Step 7: Calculate RSI using the formula: RSI = 100 - (100 / (1 + RS))
+-- Where RS = Average Gain / Average Loss
+-- If there are no losses (avg_loss = 0), RSI is set to 100 (maximum)
+RSI_Calculation AS (
   SELECT
     ticker,
-    totalRevenue AS earlierRevenue,
-    report_date AS earlierReportDate
-  FROM
-    RankedFinancials
-  WHERE
-    rn = 5
-),
-RevenueIncrease AS (
-  SELECT
-    lr.ticker,
-    lr.latestRevenue,
-    er.earlierRevenue,
-    (lr.latestRevenue - er.earlierRevenue) AS revenueIncrease,
-    lr.latestReportDate,
-    er.earlierReportDate
-  FROM
-    LatestRevenue lr
-  JOIN
-    EarlierRevenue er
-  ON
-    lr.ticker = er.ticker
+    CASE 
+      WHEN avg_loss = 0 THEN 100
+      ELSE 100 - (100 / (1 + (avg_gain / avg_loss)))
+    END AS rsi
+  FROM FirstAvg
 )
+
+-- Step 8: Final result - pull latest price data for stocks with RSI < 25
+-- This finds potentially oversold large-cap stocks
 SELECT
-  DISTINCT ri.ticker,
-  ri.latestRevenue,
-  ri.earlierRevenue,
-  ri.revenueIncrease,
-  ri.latestReportDate,
-  ri.earlierReportDate
-FROM
-  RevenueIncrease ri
-JOIN
-  \`nexustrade-io.stockindustries.current\` si
-ON
-  ri.ticker = si.ticker
-WHERE
-  si.bioinformatics = TRUE
-  OR si.biotechnology = TRUE
-  OR si.computationalBiology = TRUE
-ORDER BY
-  ri.revenueIncrease DESC
+  pd.ticker,
+  pd.lastClosingPrice,
+  pd.marketCap,
+  rc.rsi
+FROM PriceData pd
+JOIN RSI_Calculation rc ON pd.ticker = rc.ticker
+WHERE pd.day_rank = 1  -- Most recent day
+AND rc.rsi < 25
+ORDER BY rc.rsi ASC  -- Sorted from most oversold to least
 LIMIT 25
 \`\`\`
+
+====================================================
+
 User:
-what stocks with a market cap below $100 billion had an increasing net income every quarter for the last 4 quarters?
+What non-technology stocks are fundamentally strong? Include their metrics like 4-yr CAGR for revenue, net income, and FCF, their current revenue, net income, and FCF, and P/E ratio
+User:
+SYSTEM HINT, for "fundamentally strong", look at the reports table
+\`nexustrade-io.universalstockfundamentals.reports\` and sort by the rating descending. for CAGR: Look at the \`annual_financials\` table and do 10 entries, 5 entries, and 3 entries before the period of time. Unless they specify otherwise, always, include the 3-year, 5-year, and 10-year CAGR. 
+
+SYSTEM HINT 2: When calculating CAGR, the table itself might have multiple entries because different metrics were reported on different days. When calculating revenue CAGR, you MUST say sort by non-null values for the metrics we want.
+
+For example, NOT 
+CASE
+  WHEN latest.totalRevenue > 0 AND yr3.totalRevenue > 0
+  THEN POWER((latest.totalRevenue / yr3.totalRevenue), 1/3) - 1
+  ELSE NULL
+END AS revenue_cagr_3yr
+
+
+You should do 
+CASE
+  WHEN latest.totalRevenue IS NOT NULL AND yr3.totalRevenue IS NOT NULL 
+       AND latest.totalRevenue > 0 AND yr3.totalRevenue > 0
+  THEN POWER((latest.totalRevenue / yr3.totalRevenue), 1/3) - 1
+  ELSE NULL
+END AS revenue_cagr_3yr
+
+When we sort and rank and find values, we should be explicitly checking for non-null values
 AI Assistant:
 \`\`\`sql
--- The following query identifies stocks with a market cap below $100 billion 
--- that have shown an increasing net income every quarter over the last 4 quarters.
+-- This query identifies non-technology stocks that are considered "fundamentally strong"
+-- (defined as having a latest report rating of 3.5 or higher).
+-- It then calculates and displays several key metrics for these stocks:
+-- 1. Current (latest quarterly) total revenue, net income, and free cash flow.
+-- 2. Trailing Twelve Months (TTM) Price-to-Earnings (P/E) ratio.
+-- 3. 3-year, 5-year, and 10-year Compound Annual Growth Rates (CAGR) for total revenue, net income, and free cash flow,
+-- derived from annual financial reports.
 --
--- Step 1: LatestPrice CTE finds the most recent price_data record (by converting timestamp to date)
--- for each stock with marketCap < $100B.
+-- Methodology for CAGR:
+-- - Annual reports are ranked chronologically for each stock.
+-- - Data points are selected from the latest report (rn=1), the report 3 fiscal years prior (rn=4),
+-- 5 fiscal years prior (rn=6), and 10 fiscal years prior (rn=11).
+-- - The CAGR calculation formulas explicitly check if the metric values for both the start and end periods are NON-NULL
+-- AND if BOTH the base year's metric value AND the latest year's metric value are POSITIVE.
+-- If these conditions are not met, CAGR is returned as NULL. This prevents errors with POW function for negative bases.
 --
--- Step 2: RankedFinancials CTE retrieves quarterly net income data for the stocks in LatestPrice, 
--- ranking the records in reverse chronological order.
---
--- Step 3: Latest4 CTE filters to the last 4 quarterly records per stock (rn_desc <= 4) and 
--- then re-orders them in ascending order (from oldest to most recent) using rn_asc.
---
--- Step 4: PivotCTE aggregates the 4 quarters for each ticker, creating columns for each quarter's net income.
--- We then ensure that each ticker has exactly 4 records (COUNT(*) = 4) and that net income is strictly increasing.
---
--- Finally, we join with LatestPrice to include market cap and the latest price date, and then order the results
--- by the net income increase (q4 - q1) in descending order.
-WITH LatestPrice AS (
-  SELECT
-    ticker,
-    marketCap,
-    DATE(date) AS price_date
-  FROM
-    \`nexustrade-io.universalstockfundamentals.price_data\`
-  WHERE DATE(date) = (
-    SELECT DATE(MAX(date))
-    FROM \`nexustrade-io.universalstockfundamentals.price_data\`
-  )
-  AND marketCap < 100000000000
+-- The query ensures that each stock appears only once by using ROW_NUMBER() to select the latest data points
+-- and joining CTEs on the ticker. Results are ordered by the fundamental rating in descending order.
+
+-- CTE to get the latest date from price_data for joining price-related metrics.
+WITH LatestDatePrice AS (
+ SELECT
+ DATE(MAX(date)) AS latest_date
+ FROM
+ \`nexustrade-io.universalstockfundamentals.price_data\`
 ),
-RankedFinancials AS (
-  SELECT
-    ticker,
-    netIncome,
-    DATE(date) AS report_date,
-    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn_desc
-  FROM
-    \`nexustrade-io.financials.quarterly_financials\`
-  WHERE
-    ticker IN (SELECT ticker FROM LatestPrice)
+
+-- CTE to get the latest fundamental report and rating for each stock.
+LatestReport AS (
+ SELECT
+ ticker,
+ fiscalYear,
+ fiscalPeriod,
+ rating,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) as rn
+ FROM
+ \`nexustrade-io.universalstockfundamentals.reports\`
 ),
-Latest4 AS (
-  -- Filter to the last 4 quarters for each ticker and re-rank them in ascending order by report_date
-  SELECT
-    ticker,
-    netIncome,
-    report_date,
-    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY report_date ASC) AS rn_asc
-  FROM
-    RankedFinancials
-  WHERE rn_desc <= 4
+
+-- CTE to identify non-technology stocks.
+NonTechStocks AS (
+ SELECT
+ DISTINCT ticker -- Ensure unique tickers
+ FROM
+ \`nexustrade-io.stockindustries.current\`
+ WHERE
+ technology IS NULL -- Identifies non-technology stocks
 ),
-PivotCTE AS (
-  -- Pivot the 4 quarters into columns and check for a strictly increasing pattern.
-  SELECT
-    ticker,
-    MAX(IF(rn_asc = 1, netIncome, NULL)) AS q1,
-    MAX(IF(rn_asc = 2, netIncome, NULL)) AS q2,
-    MAX(IF(rn_asc = 3, netIncome, NULL)) AS q3,
-    MAX(IF(rn_asc = 4, netIncome, NULL)) AS q4
-  FROM
-    Latest4
-  GROUP BY
-    ticker
-  HAVING
-    COUNT(*) = 4 
-    AND q1 < q2 AND q2 < q3 AND q3 < q4
+
+-- CTE to filter for fundamentally strong (rating >= 3.5) non-technology stocks.
+FundamentallyStrongNonTechTickers AS (
+ SELECT
+ lr.ticker,
+ lr.rating
+ FROM
+ LatestReport lr
+ JOIN
+ NonTechStocks nts ON lr.ticker = nts.ticker
+ WHERE
+ lr.rn = 1 AND lr.rating >= 3.5
+),
+
+-- CTE to get the latest P/E ratio for the selected stocks.
+LatestPriceMetrics AS (
+ SELECT
+ p.ticker,
+ p.priceToEarningsRatioTTM
+ FROM
+ \`nexustrade-io.universalstockfundamentals.price_data\` p
+ INNER JOIN
+ LatestDatePrice ldp ON DATE(p.date) = ldp.latest_date
+ WHERE
+ p.ticker IN (SELECT ticker FROM FundamentallyStrongNonTechTickers)
+),
+
+-- CTE to get the latest quarterly financial metrics (revenue, net income, FCF).
+LatestQuarterlyFinancialsRanked AS (
+ SELECT
+ ticker,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ DATE(date) AS report_date,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM
+ \`nexustrade-io.financials.quarterly_financials\`
+ WHERE
+ ticker IN (SELECT ticker FROM FundamentallyStrongNonTechTickers)
+),
+
+-- CTE to rank all annual financial reports chronologically for each stock.
+AnnualFinancialsRanked AS (
+ SELECT
+ ticker,
+ DATE(date) AS report_date,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM
+ \`nexustrade-io.financials.annual_financials\`
+ WHERE
+ ticker IN (SELECT ticker FROM FundamentallyStrongNonTechTickers)
+),
+
+CAGR_Calculation AS (
+ WITH AnnualDataPoints AS (
+ SELECT
+ ticker,
+ MAX(CASE WHEN rn = 1 THEN totalRevenue END) as latest_revenue,
+ MAX(CASE WHEN rn = 1 THEN netIncome END) as latest_net_income,
+ MAX(CASE WHEN rn = 1 THEN freeCashFlow END) as latest_fcf,
+ MAX(CASE WHEN rn = 4 THEN totalRevenue END) as y3_revenue,
+ MAX(CASE WHEN rn = 4 THEN netIncome END) as y3_net_income,
+ MAX(CASE WHEN rn = 4 THEN freeCashFlow END) as y3_fcf,
+ MAX(CASE WHEN rn = 6 THEN totalRevenue END) as y5_revenue,
+ MAX(CASE WHEN rn = 6 THEN netIncome END) as y5_net_income,
+ MAX(CASE WHEN rn = 6 THEN freeCashFlow END) as y5_fcf,
+ MAX(CASE WHEN rn = 11 THEN totalRevenue END) as y10_revenue,
+ MAX(CASE WHEN rn = 11 THEN netIncome END) as y10_net_income,
+ MAX(CASE WHEN rn = 11 THEN freeCashFlow END) as y10_fcf
+ FROM
+ AnnualFinancialsRanked
+ WHERE
+ rn IN (1, 4, 6, 11)
+ GROUP BY
+ ticker
+ )
+ SELECT
+ ticker,
+ latest_revenue, y3_revenue, y5_revenue, y10_revenue,
+ latest_net_income, y3_net_income, y5_net_income, y10_net_income,
+ latest_fcf, y3_fcf, y5_fcf, y10_fcf,
+
+ -- Revenue CAGR: Calculated if both start and end revenues are non-NULL and POSITIVE.
+ CASE WHEN latest_revenue IS NOT NULL AND y3_revenue IS NOT NULL AND y3_revenue > 0 AND latest_revenue > 0
+ THEN POWER(latest_revenue / y3_revenue, 1.0/3.0) - 1 ELSE NULL END AS revenue_cagr_3yr,
+ CASE WHEN latest_revenue IS NOT NULL AND y5_revenue IS NOT NULL AND y5_revenue > 0 AND latest_revenue > 0
+ THEN POWER(latest_revenue / y5_revenue, 1.0/5.0) - 1 ELSE NULL END AS revenue_cagr_5yr,
+ CASE WHEN latest_revenue IS NOT NULL AND y10_revenue IS NOT NULL AND y10_revenue > 0 AND latest_revenue > 0
+ THEN POWER(latest_revenue / y10_revenue, 1.0/10.0) - 1 ELSE NULL END AS revenue_cagr_10yr,
+
+ -- Net Income CAGR: Calculated if both start and end net incomes are non-NULL and POSITIVE.
+ CASE WHEN latest_net_income IS NOT NULL AND y3_net_income IS NOT NULL AND y3_net_income > 0 AND latest_net_income > 0
+ THEN POWER(latest_net_income / y3_net_income, 1.0/3.0) - 1 ELSE NULL END AS net_income_cagr_3yr,
+ CASE WHEN latest_net_income IS NOT NULL AND y5_net_income IS NOT NULL AND y5_net_income > 0 AND latest_net_income > 0
+ THEN POWER(latest_net_income / y5_net_income, 1.0/5.0) - 1 ELSE NULL END AS net_income_cagr_5yr,
+ CASE WHEN latest_net_income IS NOT NULL AND y10_net_income IS NOT NULL AND y10_net_income > 0 AND latest_net_income > 0
+ THEN POWER(latest_net_income / y10_net_income, 1.0/10.0) - 1 ELSE NULL END AS net_income_cagr_10yr,
+
+ -- Free Cash Flow CAGR: Calculated if both start and end FCFs are non-NULL and POSITIVE.
+ CASE WHEN latest_fcf IS NOT NULL AND y3_fcf IS NOT NULL AND y3_fcf > 0 AND latest_fcf > 0
+ THEN POWER(latest_fcf / y3_fcf, 1.0/3.0) - 1 ELSE NULL END AS fcf_cagr_3yr,
+ CASE WHEN latest_fcf IS NOT NULL AND y5_fcf IS NOT NULL AND y5_fcf > 0 AND latest_fcf > 0
+ THEN POWER(latest_fcf / y5_fcf, 1.0/5.0) - 1 ELSE NULL END AS fcf_cagr_5yr,
+ CASE WHEN latest_fcf IS NOT NULL AND y10_fcf IS NOT NULL AND y10_fcf > 0 AND latest_fcf > 0
+ THEN POWER(latest_fcf / y10_fcf, 1.0/10.0) - 1 ELSE NULL END AS fcf_cagr_10yr
+ FROM
+ AnnualDataPoints
 )
+
+-- Final selection joining all CTEs to present the data.
 SELECT
-  DISTINCT lp.ticker,
-  lp.marketCap,
-  lp.price_date,
-  p.q1 AS oldestQuarter_NetIncome,
-  p.q2 AS secondQuarter_NetIncome,
-  p.q3 AS thirdQuarter_NetIncome,
-  p.q4 AS latestQuarter_NetIncome,
-  (p.q4 - p.q1) AS netIncome_Trend_Increase
+ fsnt.ticker,
+ fsnt.rating AS fundamental_rating,
+ lqm.totalRevenue AS current_revenue_quarterly,
+ lqm.netIncome AS current_net_income_quarterly,
+ lqm.freeCashFlow AS current_fcf_quarterly,
+ lpm.priceToEarningsRatioTTM,
+ cagr.revenue_cagr_3yr,
+ cagr.revenue_cagr_5yr,
+ cagr.revenue_cagr_10yr,
+ cagr.net_income_cagr_3yr,
+ cagr.net_income_cagr_5yr,
+ cagr.net_income_cagr_10yr,
+ cagr.fcf_cagr_3yr,
+ cagr.fcf_cagr_5yr,
+ cagr.fcf_cagr_10yr,
+ -- Raw annual values used for CAGR transparency
+ cagr.latest_revenue AS annual_latest_revenue,
+ cagr.y3_revenue AS annual_3yr_ago_revenue,
+ cagr.y5_revenue AS annual_5yr_ago_revenue,
+ cagr.y10_revenue AS annual_10yr_ago_revenue,
+ cagr.latest_net_income AS annual_latest_net_income,
+ cagr.y3_net_income AS annual_3yr_ago_net_income,
+ cagr.y5_net_income AS annual_5yr_ago_net_income,
+ cagr.y10_net_income AS annual_10yr_ago_net_income,
+ cagr.latest_fcf AS annual_latest_fcf,
+ cagr.y3_fcf AS annual_3yr_ago_fcf,
+ cagr.y5_fcf AS annual_5yr_ago_fcf,
+ cagr.y10_fcf AS annual_10yr_ago_fcf
 FROM
-  PivotCTE p
-JOIN
-  LatestPrice lp
-ON
-  p.ticker = lp.ticker
+ FundamentallyStrongNonTechTickers fsnt
+LEFT JOIN
+ (SELECT * FROM LatestQuarterlyFinancialsRanked WHERE rn = 1) lqm ON fsnt.ticker = lqm.ticker
+LEFT JOIN
+ LatestPriceMetrics lpm ON fsnt.ticker = lpm.ticker
+LEFT JOIN
+ CAGR_Calculation cagr ON fsnt.ticker = cagr.ticker
 ORDER BY
-  netIncome_Trend_Increase DESC
-LIMIT 25
+ fsnt.rating DESC
+LIMIT 25;
+\`\`\`
+User:
+Compare the fundamentals of Apple and Google including:
+- Revenue
+- Net income
+- FcF
+- 3/5/10 yr CAGR
+User:
+SYSTEM HINT: Make sure to explain how we'll avoid null CAGR for stocks that we KNOW should have the values
+AI Assistant:
+\`\`\`sql
+-- This query compares the fundamental financial metrics of Apple (AAPL) and Google (GOOGL).
+-- It includes:
+-- 1. Latest reported quarterly Total Revenue, Net Income, and Free Cash Flow.
+-- 2. 3-year, 5-year, and 10-year Compound Annual Growth Rates (CAGR) for Total Revenue, Net Income, and Free Cash Flow,
+-- derived from their annual financial reports.
+--
+-- Methodology for CAGR Calculation:
+-- - To ensure accuracy and handle potential NULLs in historical data, annual financial records are ranked
+--   SEPARATELY for Total Revenue, Net Income, and Free Cash Flow. Each ranking only considers records
+--   where the specific metric in question IS NOT NULL.
+-- - For each company and each metric, we identify the latest annual report value (rn=1 from its specific ranked list)
+--   and the values from 3 fiscal years prior (rn=4), 5 fiscal years prior (rn=6), and 10 fiscal years prior (rn=11)
+--   FROM ITS OWN METRIC-SPECIFIC RANKED LIST. This ensures we use the Nth available valid data point.
+-- - The CAGR is calculated using the formula: POWER(EndValue / StartValue, 1.0 / NumberOfYears) - 1.
+-- - For a CAGR to be calculated:
+--     - Both the starting and ending period values for that metric (obtained from the metric-specific ranked lists) MUST NOT BE NULL.
+--     - Both the starting period's metric value AND the ending period's metric value MUST BE POSITIVE.
+-- - If these conditions are not met, the result for that specific CAGR will be NULL.
+--
+-- The query uses Common Table Expressions (CTEs) for clarity and structure.
+
+WITH SelectedTickers AS (
+ -- Define the companies we want to compare
+ SELECT 'AAPL' AS ticker
+ UNION ALL
+ SELECT 'GOOGL' AS ticker
+),
+
+LatestQuarterlyFinancials AS (
+ -- Get the most recent quarterly financial data for the selected tickers
+ SELECT
+ ticker,
+ totalRevenue AS latest_quarterly_revenue,
+ netIncome AS latest_quarterly_net_income,
+ freeCashFlow AS latest_quarterly_fcf,
+ DATE(date) AS latest_quarterly_report_date
+ FROM (
+ SELECT
+ ticker,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ date,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM
+ \`nexustrade-io.financials.quarterly_financials\`
+ WHERE
+ ticker IN (SELECT ticker FROM SelectedTickers)
+ )
+ WHERE rn = 1
+),
+
+-- Create metric-specific ranked lists from annual financials, filtering out NULLs for the key metric.
+AnnualRevenueRanked AS (
+ SELECT ticker, DATE(date) AS report_date, totalRevenue,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM \`nexustrade-io.financials.annual_financials\`
+ WHERE ticker IN (SELECT ticker FROM SelectedTickers) AND totalRevenue IS NOT NULL
+),
+AnnualNetIncomeRanked AS (
+ SELECT ticker, DATE(date) AS report_date, netIncome,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM \`nexustrade-io.financials.annual_financials\`
+ WHERE ticker IN (SELECT ticker FROM SelectedTickers) AND netIncome IS NOT NULL
+),
+AnnualFCFRanked AS (
+ SELECT ticker, DATE(date) AS report_date, freeCashFlow,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM \`nexustrade-io.financials.annual_financials\`
+ WHERE ticker IN (SELECT ticker FROM SelectedTickers) AND freeCashFlow IS NOT NULL
+),
+
+CAGR_DataPoints AS (
+ -- Consolidate annual data points for CAGR from the metric-specific ranked lists.
+ -- For each ticker, we pivot the 1st, 4th, 6th, and 11th ranked records for each metric.
+ SELECT
+    st.ticker,
+    -- Revenue data points from AnnualRevenueRanked
+    MAX(CASE WHEN arr.rn = 1 THEN arr.totalRevenue END) as latest_annual_revenue,
+    MAX(CASE WHEN arr.rn = 4 THEN arr.totalRevenue END) as r_3yr_ago,
+    MAX(CASE WHEN arr.rn = 6 THEN arr.totalRevenue END) as r_5yr_ago,
+    MAX(CASE WHEN arr.rn = 11 THEN arr.totalRevenue END) as r_10yr_ago,
+    -- Net Income data points from AnnualNetIncomeRanked
+    MAX(CASE WHEN anir.rn = 1 THEN anir.netIncome END) as latest_annual_net_income,
+    MAX(CASE WHEN anir.rn = 4 THEN anir.netIncome END) as ni_3yr_ago,
+    MAX(CASE WHEN anir.rn = 6 THEN anir.netIncome END) as ni_5yr_ago,
+    MAX(CASE WHEN anir.rn = 11 THEN anir.netIncome END) as ni_10yr_ago,
+    -- FCF data points from AnnualFCFRanked
+    MAX(CASE WHEN afcfr.rn = 1 THEN afcfr.freeCashFlow END) as latest_annual_fcf,
+    MAX(CASE WHEN afcfr.rn = 4 THEN afcfr.freeCashFlow END) as fcf_3yr_ago,
+    MAX(CASE WHEN afcfr.rn = 6 THEN afcfr.freeCashFlow END) as fcf_5yr_ago,
+    MAX(CASE WHEN afcfr.rn = 11 THEN afcfr.freeCashFlow END) as fcf_10yr_ago
+ FROM SelectedTickers st
+ LEFT JOIN AnnualRevenueRanked arr ON st.ticker = arr.ticker AND arr.rn IN (1, 4, 6, 11)
+ LEFT JOIN AnnualNetIncomeRanked anir ON st.ticker = anir.ticker AND anir.rn IN (1, 4, 6, 11)
+ LEFT JOIN AnnualFCFRanked afcfr ON st.ticker = afcfr.ticker AND afcfr.rn IN (1, 4, 6, 11)
+ GROUP BY st.ticker
+),
+
+CAGR_Calculation AS (
+ -- Calculate 3-year, 5-year, and 10-year CAGRs for Revenue, Net Income, and FCF
+ SELECT
+ ticker,
+ latest_annual_revenue, r_3yr_ago, r_5yr_ago, r_10yr_ago,
+ latest_annual_net_income, ni_3yr_ago, ni_5yr_ago, ni_10yr_ago,
+ latest_annual_fcf, fcf_3yr_ago, fcf_5yr_ago, fcf_10yr_ago,
+
+ -- Revenue CAGR: Calculated if both start and end revenues are non-NULL and POSITIVE.
+ CASE WHEN latest_annual_revenue IS NOT NULL AND r_3yr_ago IS NOT NULL AND r_3yr_ago > 0 AND latest_annual_revenue > 0
+ THEN POWER(latest_annual_revenue / r_3yr_ago, 1.0/3.0) - 1 ELSE NULL END AS revenue_cagr_3yr,
+ CASE WHEN latest_annual_revenue IS NOT NULL AND r_5yr_ago IS NOT NULL AND r_5yr_ago > 0 AND latest_annual_revenue > 0
+ THEN POWER(latest_annual_revenue / r_5yr_ago, 1.0/5.0) - 1 ELSE NULL END AS revenue_cagr_5yr,
+ CASE WHEN latest_annual_revenue IS NOT NULL AND r_10yr_ago IS NOT NULL AND r_10yr_ago > 0 AND latest_annual_revenue > 0
+ THEN POWER(latest_annual_revenue / r_10yr_ago, 1.0/10.0) - 1 ELSE NULL END AS revenue_cagr_10yr,
+
+ -- Net Income CAGR: Calculated if both start and end net incomes are non-NULL and POSITIVE.
+ CASE WHEN latest_annual_net_income IS NOT NULL AND ni_3yr_ago IS NOT NULL AND ni_3yr_ago > 0 AND latest_annual_net_income > 0
+ THEN POWER(latest_annual_net_income / ni_3yr_ago, 1.0/3.0) - 1 ELSE NULL END AS net_income_cagr_3yr,
+ CASE WHEN latest_annual_net_income IS NOT NULL AND ni_5yr_ago IS NOT NULL AND ni_5yr_ago > 0 AND latest_annual_net_income > 0
+ THEN POWER(latest_annual_net_income / ni_5yr_ago, 1.0/5.0) - 1 ELSE NULL END AS net_income_cagr_5yr,
+ CASE WHEN latest_annual_net_income IS NOT NULL AND ni_10yr_ago IS NOT NULL AND ni_10yr_ago > 0 AND latest_annual_net_income > 0
+ THEN POWER(latest_annual_net_income / ni_10yr_ago, 1.0/10.0) - 1 ELSE NULL END AS net_income_cagr_10yr,
+
+ -- Free Cash Flow CAGR: Calculated if both start and end FCFs are non-NULL and POSITIVE.
+ CASE WHEN latest_annual_fcf IS NOT NULL AND fcf_3yr_ago IS NOT NULL AND fcf_3yr_ago > 0 AND latest_annual_fcf > 0
+ THEN POWER(latest_annual_fcf / fcf_3yr_ago, 1.0/3.0) - 1 ELSE NULL END AS fcf_cagr_3yr,
+ CASE WHEN latest_annual_fcf IS NOT NULL AND fcf_5yr_ago IS NOT NULL AND fcf_5yr_ago > 0 AND latest_annual_fcf > 0
+ THEN POWER(latest_annual_fcf / fcf_5yr_ago, 1.0/5.0) - 1 ELSE NULL END AS fcf_cagr_5yr,
+ CASE WHEN latest_annual_fcf IS NOT NULL AND fcf_10yr_ago IS NOT NULL AND fcf_10yr_ago > 0 AND latest_annual_fcf > 0
+ THEN POWER(latest_annual_fcf / fcf_10yr_ago, 1.0/10.0) - 1 ELSE NULL END AS fcf_cagr_10yr
+ FROM
+ CAGR_DataPoints
+)
+
+-- Final SELECT to join latest quarterly data with calculated CAGRs for comparison
+SELECT
+ st.ticker,
+ lqf.latest_quarterly_report_date,
+ lqf.latest_quarterly_revenue,
+ lqf.latest_quarterly_net_income,
+ lqf.latest_quarterly_fcf,
+ cagr.revenue_cagr_3yr,
+ cagr.revenue_cagr_5yr,
+ cagr.revenue_cagr_10yr,
+ cagr.net_income_cagr_3yr,
+ cagr.net_income_cagr_5yr,
+ cagr.net_income_cagr_10yr,
+ cagr.fcf_cagr_3yr,
+ cagr.fcf_cagr_5yr,
+ cagr.fcf_cagr_10yr,
+ -- Including raw annual values for transparency of CAGR calculation
+ cagr.latest_annual_revenue, cagr.r_3yr_ago AS revenue_3yr_ago, cagr.r_5yr_ago AS revenue_5yr_ago, cagr.r_10yr_ago AS revenue_10yr_ago,
+ cagr.latest_annual_net_income, cagr.ni_3yr_ago AS net_income_3yr_ago, cagr.ni_5yr_ago AS net_income_5yr_ago, cagr.ni_10yr_ago AS net_income_10yr_ago,
+ cagr.latest_annual_fcf, cagr.fcf_3yr_ago AS fcf_3yr_ago, cagr.fcf_5yr_ago AS fcf_5yr_ago, cagr.fcf_10yr_ago AS fcf_10yr_ago
+FROM
+ SelectedTickers st
+LEFT JOIN
+ LatestQuarterlyFinancials lqf ON st.ticker = lqf.ticker
+LEFT JOIN
+ CAGR_Calculation cagr ON st.ticker = cagr.ticker
+ORDER BY
+ st.ticker;
+\`\`\`
+User:
+Compare the fundamentals of the MAG7
+- Revenue
+- Net income
+- FcF
+- 4/7 yr CAGR
+User:
+AGAIN, explicitly think about something like this:
+date	totalRevenue
+2024-11-01 20:00:00.000000 UTC	391035000000.0
+2023-11-03 20:00:00.000000 UTC	383285000000.0
+2022-10-28 20:00:00.000000 UTC	394328000000.0
+2022-10-27 20:00:00.000000 UTC	null
+2021-10-29 20:00:00.000000 UTC	365817000000.0
+
+And how we will avoid querying for the wrong data
+AI Assistant:
+\`\`\`sql
+-- This query compares the fundamental financial metrics of the MAG7 stocks (META, AAPL, AMZN, MSFT, GOOGL, NVDA, TSLA).
+-- It includes:
+-- 1. Latest reported quarterly Total Revenue, Net Income, and Free Cash Flow.
+-- 2. 4-year and 7-year Compound Annual Growth Rates (CAGR) for Total Revenue, Net Income, and Free Cash Flow,
+-- derived from their annual financial reports.
+--
+-- Methodology for CAGR Calculation:
+-- - To ensure accuracy and handle potential NULLs in historical data, annual financial records are ranked
+-- SEPARATELY for Total Revenue, Net Income, and Free Cash Flow. Each ranking only considers records
+-- where the specific metric in question IS NOT NULL.
+-- - For each company and each metric, we identify:
+-- - The latest annual report value (rn=1 from its specific ranked list).
+-- - The value from 4 fiscal years prior (rn=5 from its specific ranked list for 4-year CAGR).
+-- - The value from 7 fiscal years prior (rn=8 from its specific ranked list for 7-year CAGR).
+-- This ensures we use the Nth available valid data point for each period.
+-- - The CAGR is calculated using the formula: POWER(EndValue / StartValue, 1.0 / NumberOfYears) - 1.
+-- - For a CAGR to be calculated:
+-- - Both the starting and ending period values for that metric (obtained from the metric-specific ranked lists) MUST NOT BE NULL.
+-- - Both the starting period's metric value AND the ending period's metric value MUST BE POSITIVE.
+-- - If these conditions are not met, the result for that specific CAGR will be NULL.
+--
+-- The query uses Common Table Expressions (CTEs) for clarity and structure, ensuring each stock appears only once in the final result.
+
+WITH MAG7Tickers AS (
+ -- Define the MAG7 companies
+ SELECT 'META' AS ticker UNION ALL
+ SELECT 'AAPL' AS ticker UNION ALL
+ SELECT 'AMZN' AS ticker UNION ALL
+ SELECT 'MSFT' AS ticker UNION ALL
+ SELECT 'GOOGL' AS ticker UNION ALL
+ SELECT 'NVDA' AS ticker UNION ALL
+ SELECT 'TSLA' AS ticker
+),
+
+LatestQuarterlyFinancials AS (
+ -- Get the most recent quarterly financial data for the MAG7 tickers
+ SELECT
+ ticker,
+ totalRevenue AS latest_quarterly_revenue,
+ netIncome AS latest_quarterly_net_income,
+ freeCashFlow AS latest_quarterly_fcf,
+ DATE(date) AS latest_quarterly_report_date
+ FROM (
+ SELECT
+ ticker,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ date,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM
+ \`nexustrade-io.financials.quarterly_financials\`
+ WHERE
+ ticker IN (SELECT ticker FROM MAG7Tickers)
+ )
+ WHERE rn = 1
+),
+
+-- Create metric-specific ranked lists from annual financials, filtering out NULLs for the key metric.
+AnnualRevenueRanked AS (
+ SELECT ticker, DATE(date) AS report_date, totalRevenue,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM \`nexustrade-io.financials.annual_financials\`
+ WHERE ticker IN (SELECT ticker FROM MAG7Tickers) AND totalRevenue IS NOT NULL
+),
+AnnualNetIncomeRanked AS (
+ SELECT ticker, DATE(date) AS report_date, netIncome,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM \`nexustrade-io.financials.annual_financials\`
+ WHERE ticker IN (SELECT ticker FROM MAG7Tickers) AND netIncome IS NOT NULL
+),
+AnnualFCFRanked AS (
+ SELECT ticker, DATE(date) AS report_date, freeCashFlow,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) as rn
+ FROM \`nexustrade-io.financials.annual_financials\`
+ WHERE ticker IN (SELECT ticker FROM MAG7Tickers) AND freeCashFlow IS NOT NULL
+),
+
+CAGR_DataPoints AS (
+ -- Consolidate annual data points for CAGR from the metric-specific ranked lists.
+ -- For each ticker, we pivot the 1st (latest), 5th (4-years ago), and 8th (7-years ago) ranked records for each metric.
+ SELECT
+ st.ticker,
+ -- Revenue data points from AnnualRevenueRanked
+ MAX(CASE WHEN arr.rn = 1 THEN arr.totalRevenue END) as latest_annual_revenue,
+ MAX(CASE WHEN arr.rn = 5 THEN arr.totalRevenue END) as r_4yr_ago, -- 4 years prior is the 5th record (1st, 2nd, 3rd, 4th, 5th)
+ MAX(CASE WHEN arr.rn = 8 THEN arr.totalRevenue END) as r_7yr_ago, -- 7 years prior is the 8th record
+ -- Net Income data points from AnnualNetIncomeRanked
+ MAX(CASE WHEN anir.rn = 1 THEN anir.netIncome END) as latest_annual_net_income,
+ MAX(CASE WHEN anir.rn = 5 THEN anir.netIncome END) as ni_4yr_ago,
+ MAX(CASE WHEN anir.rn = 8 THEN anir.netIncome END) as ni_7yr_ago,
+ -- FCF data points from AnnualFCFRanked
+ MAX(CASE WHEN afcfr.rn = 1 THEN afcfr.freeCashFlow END) as latest_annual_fcf,
+ MAX(CASE WHEN afcfr.rn = 5 THEN afcfr.freeCashFlow END) as fcf_4yr_ago,
+ MAX(CASE WHEN afcfr.rn = 8 THEN afcfr.freeCashFlow END) as fcf_7yr_ago
+ FROM MAG7Tickers st
+ LEFT JOIN AnnualRevenueRanked arr ON st.ticker = arr.ticker AND arr.rn IN (1, 5, 8)
+ LEFT JOIN AnnualNetIncomeRanked anir ON st.ticker = anir.ticker AND anir.rn IN (1, 5, 8)
+ LEFT JOIN AnnualFCFRanked afcfr ON st.ticker = afcfr.ticker AND afcfr.rn IN (1, 5, 8)
+ GROUP BY st.ticker
+),
+
+CAGR_Calculation AS (
+ -- Calculate 4-year and 7-year CAGRs for Revenue, Net Income, and FCF
+ SELECT
+ ticker,
+ latest_annual_revenue, r_4yr_ago, r_7yr_ago,
+ latest_annual_net_income, ni_4yr_ago, ni_7yr_ago,
+ latest_annual_fcf, fcf_4yr_ago, fcf_7yr_ago,
+
+ -- Revenue CAGR: Calculated if both start and end revenues are non-NULL and POSITIVE.
+ CASE WHEN latest_annual_revenue IS NOT NULL AND r_4yr_ago IS NOT NULL AND r_4yr_ago > 0 AND latest_annual_revenue > 0
+ THEN POWER(latest_annual_revenue / r_4yr_ago, 1.0/4.0) - 1 ELSE NULL END AS revenue_cagr_4yr,
+ CASE WHEN latest_annual_revenue IS NOT NULL AND r_7yr_ago IS NOT NULL AND r_7yr_ago > 0 AND latest_annual_revenue > 0
+ THEN POWER(latest_annual_revenue / r_7yr_ago, 1.0/7.0) - 1 ELSE NULL END AS revenue_cagr_7yr,
+
+ -- Net Income CAGR: Calculated if both start and end net incomes are non-NULL and POSITIVE.
+ CASE WHEN latest_annual_net_income IS NOT NULL AND ni_4yr_ago IS NOT NULL AND ni_4yr_ago > 0 AND latest_annual_net_income > 0
+ THEN POWER(latest_annual_net_income / ni_4yr_ago, 1.0/4.0) - 1 ELSE NULL END AS net_income_cagr_4yr,
+ CASE WHEN latest_annual_net_income IS NOT NULL AND ni_7yr_ago IS NOT NULL AND ni_7yr_ago > 0 AND latest_annual_net_income > 0
+ THEN POWER(latest_annual_net_income / ni_7yr_ago, 1.0/7.0) - 1 ELSE NULL END AS net_income_cagr_7yr,
+
+ -- Free Cash Flow CAGR: Calculated if both start and end FCFs are non-NULL and POSITIVE.
+ CASE WHEN latest_annual_fcf IS NOT NULL AND fcf_4yr_ago IS NOT NULL AND fcf_4yr_ago > 0 AND latest_annual_fcf > 0
+ THEN POWER(latest_annual_fcf / fcf_4yr_ago, 1.0/4.0) - 1 ELSE NULL END AS fcf_cagr_4yr,
+ CASE WHEN latest_annual_fcf IS NOT NULL AND fcf_7yr_ago IS NOT NULL AND fcf_7yr_ago > 0 AND latest_annual_fcf > 0
+ THEN POWER(latest_annual_fcf / fcf_7yr_ago, 1.0/7.0) - 1 ELSE NULL END AS fcf_cagr_7yr
+ FROM
+ CAGR_DataPoints
+)
+
+-- Final SELECT to join latest quarterly data with calculated CAGRs for comparison
+SELECT
+ mt.ticker,
+ lqf.latest_quarterly_report_date,
+ lqf.latest_quarterly_revenue,
+ lqf.latest_quarterly_net_income,
+ lqf.latest_quarterly_fcf,
+ cagr.revenue_cagr_4yr,
+ cagr.revenue_cagr_7yr,
+ cagr.net_income_cagr_4yr,
+ cagr.net_income_cagr_7yr,
+ cagr.fcf_cagr_4yr,
+ cagr.fcf_cagr_7yr,
+ -- Including raw annual values for transparency of CAGR calculation
+ cagr.latest_annual_revenue, cagr.r_4yr_ago AS revenue_4yr_ago, cagr.r_7yr_ago AS revenue_7yr_ago,
+ cagr.latest_annual_net_income, cagr.ni_4yr_ago AS net_income_4yr_ago, cagr.ni_7yr_ago AS net_income_7yr_ago,
+ cagr.latest_annual_fcf, cagr.fcf_4yr_ago AS fcf_4yr_ago, cagr.fcf_7yr_ago AS fcf_7yr_ago
+FROM
+ MAG7Tickers mt
+LEFT JOIN
+ LatestQuarterlyFinancials lqf ON mt.ticker = lqf.ticker
+LEFT JOIN
+ CAGR_Calculation cagr ON mt.ticker = cagr.ticker
+ORDER BY
+ mt.ticker;
+\`\`\`
+
+
+====================================================
+
+User:
+Take 50 random stocks with a 2024 fundamental rating score of:
+- 4.5+
+- 4 to 4.49
+- 3.5 to 3.99
+- 3 to 3.49
+- 2 to 2.99
+- 1 to 1.99
+
+Each as of their last reports. Again, 50 random stocks each. There are 6 categories so there should be at or below 300 stocks in our sample
+
+What is the average return for each category of stocks from Jan 1st 2025 to now?
+AI Assistant:
+\`\`\`sql
+-- This query calculates the average return from Jan 1, 2025 to May 30, 2025 for six categories of stocks,
+-- grouped by their 2024 fundamental rating (as of their latest 2024 report).
+-- For each category, we select up to 50 random stocks (using RAND()) that have valid price data for both the start and end of the period.
+-- The process ensures that only stocks with both a valid start and end price are included, and that each stock appears only once per category.
+
+-- DETAILED INSTRUCTIONS (all logic is explained inline with each CTE):
+-- 1. Define the start and end dates for the return calculation period.
+-- 2. For each stock, find the first available trading day on or after Jan 1, 2025 (within 7 days) and the last available trading day on or before May 30, 2025 (within 7 days).
+-- 3. Get the lastClosingPrice for each stock on those dates.
+-- 4. Calculate the percent return for each stock over the period.
+-- 5. For each stock, get its latest 2024 fundamental rating (from the most recent 2024 report).
+-- 6. Assign each stock to a rating category based on its 2024 rating.
+-- 7. For each category, randomly select up to 50 stocks (using ROW_NUMBER() OVER ... ORDER BY RAND()).
+--    - This ensures true randomness and avoids bias in the sample.
+--    - Each stock can only appear once per category.
+-- 8. Calculate the average return for each category, and report how many stocks were eligible and how many were randomly selected.
+-- 9. The query ensures that each stock is only counted once per category, and that only stocks with both valid price data and a 2024 rating are included.
+
+WITH PeriodDefinition AS (
+  -- Define the start and end dates for the return calculation period.
+  SELECT
+    DATE('2025-01-01') AS target_start_date,
+    DATE('2025-05-30') AS target_end_date
+),
+
+-- Step 1: Find the first valid trading day for each stock on/after Jan 1, 2025 (within 7 days)
+StocksWithValidStartDay AS (
+  SELECT
+    pd.ticker,
+    MIN(DATE(pd.date)) AS actual_start_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\` pd
+    CROSS JOIN PeriodDefinition def
+  WHERE
+    DATE(pd.date) BETWEEN def.target_start_date AND DATE_ADD(def.target_start_date, INTERVAL 7 DAY)
+  GROUP BY pd.ticker
+),
+
+-- Step 2: Get the start price for each stock on the identified start date
+StocksWithStartPrice AS (
+  SELECT
+    svsd.ticker,
+    svsd.actual_start_date,
+    pd.lastClosingPrice AS start_price
+  FROM StocksWithValidStartDay svsd
+  JOIN \`nexustrade-io.universalstockfundamentals.price_data\` pd
+    ON svsd.ticker = pd.ticker AND DATE(pd.date) = svsd.actual_start_date
+  WHERE pd.lastClosingPrice IS NOT NULL AND pd.lastClosingPrice > 0
+),
+
+-- Step 3: Find the last valid trading day for each stock on/before May 30, 2025 (within 7 days)
+StocksWithValidEndDay AS (
+  SELECT
+    pd.ticker,
+    MAX(DATE(pd.date)) AS actual_end_date
+  FROM
+    \`nexustrade-io.universalstockfundamentals.price_data\` pd
+    CROSS JOIN PeriodDefinition def
+  WHERE
+    DATE(pd.date) BETWEEN DATE_SUB(def.target_end_date, INTERVAL 7 DAY) AND def.target_end_date
+  GROUP BY pd.ticker
+),
+
+-- Step 4: Get the end price for each stock on the identified end date
+StocksWithEndPrice AS (
+  SELECT
+    sved.ticker,
+    sved.actual_end_date,
+    pd.lastClosingPrice AS end_price
+  FROM StocksWithValidEndDay sved
+  JOIN \`nexustrade-io.universalstockfundamentals.price_data\` pd
+    ON sved.ticker = pd.ticker AND DATE(pd.date) = sved.actual_end_date
+  WHERE pd.lastClosingPrice IS NOT NULL
+),
+
+-- Step 5: Only keep stocks that have BOTH a valid start and end price
+ReturnCalculableStocks AS (
+  SELECT
+    ssp.ticker,
+    ssp.actual_start_date,
+    ssp.start_price,
+    sep.actual_end_date,
+    sep.end_price,
+    (sep.end_price - ssp.start_price) / ssp.start_price AS return_pct
+  FROM StocksWithStartPrice ssp
+  JOIN StocksWithEndPrice sep ON ssp.ticker = sep.ticker
+),
+
+-- Step 6: Get the latest 2024 fundamental rating for each stock
+Latest2024Reports AS (
+  -- For each ticker, get the most recent 2024 report (prioritizing FY, then Q4, Q3, Q2, Q1)
+  SELECT
+    ticker,
+    fiscalPeriod,
+    rating,
+    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY
+      CASE fiscalPeriod
+        WHEN 'FY' THEN 5 WHEN 'Q4' THEN 4 WHEN 'Q3' THEN 3 WHEN 'Q2' THEN 2 WHEN 'Q1' THEN 1
+        ELSE 0
+      END DESC, date DESC) AS rn
+  FROM \`nexustrade-io.universalstockfundamentals.reports\`
+  WHERE fiscalYear = 2024
+),
+Final2024Ratings AS (
+  SELECT ticker, rating FROM Latest2024Reports WHERE rn = 1
+),
+
+-- Step 7: Join stocks with their 2024 rating and assign to a rating category
+ReturnCalculableStocksWithRating AS (
+  SELECT
+    rcs.*,
+    fr.rating AS original_2024_rating,
+    CASE
+      WHEN fr.rating >= 4.5 THEN '4.5+'
+      WHEN fr.rating >= 4.0 AND fr.rating < 4.5 THEN '4.0-4.49'
+      WHEN fr.rating >= 3.5 AND fr.rating < 4.0 THEN '3.5-3.99'
+      WHEN fr.rating >= 3.0 AND fr.rating < 3.5 THEN '3.0-3.49'
+      WHEN fr.rating >= 2.0 AND fr.rating < 3.0 THEN '2.0-2.99'
+      WHEN fr.rating >= 1.0 AND fr.rating < 2.0 THEN '1.0-1.99'
+      ELSE NULL
+    END AS rating_category
+  FROM ReturnCalculableStocks rcs
+  JOIN Final2024Ratings fr ON rcs.ticker = fr.ticker
+  WHERE fr.rating IS NOT NULL
+),
+
+-- Step 8: For each category, select up to 50 random stocks (using ROW_NUMBER() OVER ... ORDER BY RAND())
+-- This ensures true randomness and avoids bias in the sample.
+RankedReturnCalculableStocks AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY rating_category ORDER BY RAND()) AS random_rank_in_category
+  FROM ReturnCalculableStocksWithRating
+  WHERE rating_category IS NOT NULL
+),
+FinalSelectedStocksForReturn AS (
+  SELECT *
+  FROM RankedReturnCalculableStocks
+  WHERE random_rank_in_category <= 50
+),
+
+-- For context: Count how many stocks were eligible for random selection after price filtering
+EligibleForRandomSelectionCounts AS (
+  SELECT
+    rating_category,
+    COUNT(DISTINCT ticker) AS num_eligible_for_random_after_price_filter
+  FROM ReturnCalculableStocksWithRating
+  WHERE rating_category IS NOT NULL
+  GROUP BY rating_category
+)
+
+-- Step 9: Aggregate the results for each category
+SELECT
+  fsfr.rating_category,
+  COALESCE(efrsc.num_eligible_for_random_after_price_filter, 0) AS num_eligible_for_random_selection_in_category,
+  COUNT(DISTINCT fsfr.ticker) AS num_randomly_selected_and_calculated,
+  AVG(fsfr.return_pct) * 100 AS average_return_percentage
+FROM FinalSelectedStocksForReturn fsfr
+LEFT JOIN EligibleForRandomSelectionCounts efrsc ON fsfr.rating_category = efrsc.rating_category
+GROUP BY fsfr.rating_category, efrsc.num_eligible_for_random_after_price_filter
+ORDER BY
+  CASE fsfr.rating_category
+    WHEN '4.5+' THEN 1 WHEN '4.0-4.49' THEN 2 WHEN '3.5-3.99' THEN 3
+    WHEN '3.0-3.49' THEN 4 WHEN '2.0-2.99' THEN 5 WHEN '1.0-1.99' THEN 6
+    ELSE 7
+  END;
+\`\`\`
+
+
+====================================================
+
+User:
+Take 100 random stocks with a rating of 3.5+ and 3.5- (for the latest fiscal year). What was their YTD return?
+AI Assistant:
+\`\`\`sql
+-- This query calculates the year-to-date (YTD) return for two groups of stocks:
+-- 1. 100 random stocks with a latest fiscal year rating of 3.5 or higher ("3.5+")
+-- 2. 100 random stocks with a latest fiscal year rating below 3.5 ("3.5-")
+-- The YTD return is calculated from the first available trading day on or after Jan 1, 2025 to the last available trading day (May 30, 2025).
+-- The query ensures that only stocks with both valid start and end prices are included, and that each stock appears only once per group.
+
+WITH PeriodDef AS (
+  SELECT DATE('2025-01-01') AS ytd_start, DATE('2025-05-30') AS ytd_end
+),
+
+-- Step 1: For each stock, get the latest report for the latest fiscal year (2024 if available, else 2023)
+LatestFiscalYear AS (
+  SELECT
+    ticker,
+    fiscalYear,
+    rating,
+    ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, 
+      CASE fiscalPeriod WHEN 'FY' THEN 5 WHEN 'Q4' THEN 4 WHEN 'Q3' THEN 3 WHEN 'Q2' THEN 2 WHEN 'Q1' THEN 1 ELSE 0 END DESC
+    ) AS rn
+  FROM \`nexustrade-io.universalstockfundamentals.reports\`
+),
+LatestReportPerTicker AS (
+  SELECT ticker, fiscalYear, rating
+  FROM LatestFiscalYear
+  WHERE rn = 1
+),
+
+-- Step 2: Assign group based on rating
+RatedStocks AS (
+  SELECT
+    ticker,
+    fiscalYear,
+    rating,
+    CASE WHEN rating >= 3.5 THEN '3.5+' ELSE '3.5-' END AS rating_group
+  FROM LatestReportPerTicker
+  WHERE rating IS NOT NULL
+),
+
+-- Step 3: For each stock, get the first trading day on/after Jan 1, 2025 (within 7 days)
+StartDay AS (
+  SELECT
+    pd.ticker,
+    MIN(DATE(pd.date)) AS start_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\` pd, PeriodDef pddef
+  WHERE DATE(pd.date) BETWEEN pddef.ytd_start AND DATE_ADD(pddef.ytd_start, INTERVAL 7 DAY)
+  GROUP BY pd.ticker
+),
+StartPrice AS (
+  SELECT
+    sd.ticker,
+    sd.start_date,
+    pd.lastClosingPrice AS start_price
+  FROM StartDay sd
+  JOIN \`nexustrade-io.universalstockfundamentals.price_data\` pd
+    ON sd.ticker = pd.ticker AND DATE(pd.date) = sd.start_date
+  WHERE pd.lastClosingPrice IS NOT NULL AND pd.lastClosingPrice > 0
+),
+
+-- Step 4: For each stock, get the last trading day on/before May 30, 2025 (within 7 days)
+EndDay AS (
+  SELECT
+    pd.ticker,
+    MAX(DATE(pd.date)) AS end_date
+  FROM \`nexustrade-io.universalstockfundamentals.price_data\` pd, PeriodDef pddef
+  WHERE DATE(pd.date) BETWEEN DATE_SUB(pddef.ytd_end, INTERVAL 7 DAY) AND pddef.ytd_end
+  GROUP BY pd.ticker
+),
+EndPrice AS (
+  SELECT
+    ed.ticker,
+    ed.end_date,
+    pd.lastClosingPrice AS end_price
+  FROM EndDay ed
+  JOIN \`nexustrade-io.universalstockfundamentals.price_data\` pd
+    ON ed.ticker = pd.ticker AND DATE(pd.date) = ed.end_date
+  WHERE pd.lastClosingPrice IS NOT NULL
+),
+
+-- Step 5: Only keep stocks with both valid start and end prices
+ReturnableStocks AS (
+  SELECT
+    rs.ticker,
+    rs.rating_group,
+    rs.rating,
+    sp.start_date,
+    sp.start_price,
+    ep.end_date,
+    ep.end_price,
+    (ep.end_price - sp.start_price) / sp.start_price AS return_pct
+  FROM RatedStocks rs
+  JOIN StartPrice sp ON rs.ticker = sp.ticker
+  JOIN EndPrice ep ON rs.ticker = ep.ticker
+),
+
+-- Step 6: For each group, select 100 random stocks (using ROW_NUMBER() OVER ... ORDER BY RAND())
+RankedRandomStocks AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY rating_group ORDER BY RAND()) AS random_rank
+  FROM ReturnableStocks
+),
+FinalSample AS (
+  SELECT *
+  FROM RankedRandomStocks
+  WHERE random_rank <= 100
+)
+
+-- Step 7: Calculate the average YTD return for each group and report sample size
+SELECT
+  rating_group,
+  COUNT(*) AS num_random_stocks,
+  AVG(return_pct) * 100 AS avg_ytd_return_pct
+FROM FinalSample
+GROUP BY rating_group
+ORDER BY rating_group DESC
+\`\`\`
+
+
+====================================================
+
+User:
+Analyze Apple and tesla across the past two years and compare them to each other
+User:
+SYSTEM HINT:
+* Fetch the past 8 quarters of both stocks
+* Get metrics like revenue, net income, free cash flow
+* Join for earnings
+* Join **On the correct date** for the market cap, P/E ratio, P/S ratio, P/B ratio, dividend yield and or other important information
+
+
+This is WRONG because it doesn't query for the correct market cap, etc on the right date. Make sure its correct
+AI Assistant:
+\`\`\`sql
+-- This query provides a detailed fundamental comparison between Apple (AAPL) and Tesla (TSLA) over their last 8 respective fiscal quarters.
+-- To ensure accuracy, for each of the last 8 financial reports per company, we find the corresponding market data (market cap, P/E, etc.)
+-- from the first trading day immediately following the report's release. This avoids lookahead bias by reflecting the market's state at the time of each report,
+-- rather than incorrectly applying the most recent market data to all historical quarters.
+--
+-- The query retrieves:
+-- 1. Key financial metrics for the last 8 quarters (Revenue, Net Income, Free Cash Flow, etc.).
+-- 2. The corresponding EPS and fundamental rating for each of those quarters.
+-- 3. The market cap and key valuation ratios (P/E, P/S, P/B) as of the trading day following each quarterly report.
+--
+-- This structure allows for a direct, quarter-by-quarter comparison of the two companies' performance and valuation over the past two years.
+
+WITH Last8QuartersFinancials AS (
+ -- Step 1: Get the last 8 quarterly financial reports for AAPL and TSLA. This is our base data.
+ SELECT
+ ticker,
+ DATE(date) AS report_date,
+ totalRevenue,
+ netIncome,
+ freeCashFlow,
+ grossProfit,
+ operatingIncome,
+ ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY DATE(date) DESC) AS rn
+ FROM \`nexustrade-io.financials.quarterly_financials\`
+ WHERE ticker IN ('AAPL', 'TSLA')
+),
+
+-- Step 2: For each financial quarter, find the corresponding price data from the first trading day ON OR AFTER the report date.
+-- This correctly captures the market's valuation at the time of each report.
+PriceDataPerQuarter AS (
+ SELECT
+ f.ticker,
+ f.report_date,
+ p.marketCap,
+ p.priceToEarningsRatioTTM,
+ p.priceToSalesRatioTTM,
+ p.priceToBookValueTTM,
+ p.dividendYield,
+ p.lastClosingPrice,
+ DATE(p.date) as price_data_date
+ FROM (SELECT * FROM Last8QuartersFinancials WHERE rn <= 8) f
+ JOIN \`nexustrade-io.universalstockfundamentals.price_data\` p
+ ON f.ticker = p.ticker AND DATE(p.date) >= f.report_date
+ QUALIFY ROW_NUMBER() OVER (PARTITION BY f.ticker, f.report_date ORDER BY DATE(p.date) ASC) = 1
+),
+
+-- Step 3: For each financial quarter, find the corresponding EPS report by looking for the closest report date ON OR BEFORE the financial report date.
+EarningsPerQuarter AS (
+ SELECT
+ f.ticker,
+ f.report_date,
+ e.epsActual
+ FROM (SELECT * FROM Last8QuartersFinancials WHERE rn <= 8) f
+ JOIN \`nexustrade-io.financials.quarterly_earnings\` e
+ ON f.ticker = e.ticker AND DATE(e.date) <= f.report_date
+ WHERE e.epsActual IS NOT NULL
+ QUALIFY ROW_NUMBER() OVER (PARTITION BY f.ticker, f.report_date ORDER BY DATE(e.date) DESC) = 1
+),
+
+-- Step 4: For each financial quarter, find the corresponding fundamental rating report using the same "closest date on or before" logic.
+RatingsPerQuarter AS (
+ SELECT
+ f.ticker,
+ f.report_date,
+ r.rating,
+ r.fiscalYear,
+ r.fiscalPeriod
+ FROM (SELECT * FROM Last8QuartersFinancials WHERE rn <= 8) f
+ JOIN \`nexustrade-io.universalstockfundamentals.reports\` r
+ ON f.ticker = r.ticker AND DATE(r.date) <= f.report_date
+ WHERE r.rating IS NOT NULL
+ QUALIFY ROW_NUMBER() OVER (PARTITION BY f.ticker, f.report_date ORDER BY DATE(r.date) DESC) = 1
+)
+
+-- Step 5: Join all the datasets together to create the final comparison table.
+SELECT
+ f.ticker,
+ f.report_date,
+ f.rn AS quarter_rank_desc,
+ -- Key Financials from the report
+ f.totalRevenue,
+ f.netIncome,
+ f.freeCashFlow,
+ f.grossProfit,
+ f.operatingIncome,
+ -- Corresponding EPS and Rating
+ eq.epsActual,
+ rq.rating AS fundamental_rating,
+ -- Market data from the day after the report
+ pd.marketCap,
+ pd.priceToEarningsRatioTTM,
+ pd.priceToSalesRatioTTM,
+ pd.priceToBookValueTTM,
+ pd.dividendYield,
+ pd.lastClosingPrice,
+ pd.price_data_date
+FROM (SELECT * FROM Last8QuartersFinancials WHERE rn <= 8) f
+LEFT JOIN PriceDataPerQuarter pd
+ ON f.ticker = pd.ticker AND f.report_date = pd.report_date
+LEFT JOIN EarningsPerQuarter eq
+ ON f.ticker = eq.ticker AND f.report_date = eq.report_date
+LEFT JOIN RatingsPerQuarter rq
+ ON f.ticker = rq.ticker AND f.report_date = rq.report_date
+ORDER BY
+ f.ticker, f.report_date DESC;
 \`\`\`
 <EndExamples>
 Important Note: The examples above are for context only. The data in the examples is inaccurate. DO NOT use these examples in your response. They ONLY show what the expected response might look like. **Always** use the context in the conversation as the source of truth.
@@ -2827,7 +3466,7 @@ The AI will answer these questions by querying a database. For general earnings 
 #Instructions
 # CONTEXT:
 
-Thursday, Apr 10, 2025
+Thursday, Jul 10, 2025
 IMPORTANT: If the user says the full stock name, use the ticker for that stock instead!!
 
 targetAsset/targetAssets: 
@@ -2850,7 +3489,7 @@ Also, fix the following:
 * BRK.A is BRK-A
 * BRK.B is BRK-B
 
- Berkshire Hathaway is BRK-A/BRK-B. Use dashes (-) not dots (.)
+ Berkshire Hathaway is BRK-A/BRK-B. Use dashes (-) not dots (.). If you see dots, convert it to dashes.
 \`nexustrade-io.universalstockfundamentals.reports\`
 - ticker: string
 - fiscalPeriod: string // 'Q1', 'Q2', 'Q3', 'Q4' , or 'FY'
@@ -3208,6 +3847,7 @@ Sometimes, the queries involve calculations. This includes:
 * If they say "<industry>-related", we need to look for the industries similar to that.
 * If a user says a specific date, make sure we check on or before that date for an entry (the market might not be open that day and there may be no data)]
 * Note that the EPS table contains null values for recent values. You may have to filter them out of the query.
+* When joining, join **on the correct closest dates of other fields**. (Important)
 
 #SQL QUERY REQUIREMENTS
 * For fixed periods of time, include the dates
@@ -3226,6 +3866,20 @@ Sometimes, the queries involve calculations. This includes:
 * When to use DATE_SUB vs TIMESTAMP_SUB. Remember, this is BigQuery, which has a different SQL syntax
 * Do NOT use CURRENT_DATE ever! Remember to query for the last available date in the database
 * What data to query for. For example, you cannot assume a company is an industry; you must query for it using this query (or something similar): (SELECT COUNT(*) FROM UNNEST(REGEXP_EXTRACT_ALL(TO_JSON_STRING(s), r'\"([^\"]+)\":true')) AS s_industry INNER JOIN UNNEST(REGEXP_EXTRACT_ALL(TO_JSON_STRING(r), r'\"([^\"]+)\":true'))
+* How to reasonably calculate percent gain. If a number goes from negative to positive or positive to negative, YOU CANNOT CALCULATE THE PERCENT CHANGE!
+
+**Importantly**: Here's a snapshot of the annual financials table
+AGAIN, explicitly think about something like this:
+date	totalRevenue
+2024-11-01 20:00:00.000000 UTC	391035000000.0
+2023-11-03 20:00:00.000000 UTC	383285000000.0
+2022-10-28 20:00:00.000000 UTC	394328000000.0
+2022-10-27 20:00:00.000000 UTC	null
+2021-10-29 20:00:00.000000 UTC	365817000000.0
+
+When querying data or calculating metrics (such as CAGR), we MUST explain how we'll accurately calculate to get each financial accurately
+
+And how we will avoid querying for the wrong data
 
 MOST IMPORTANT: Do NOT hallucinate. Do not copy data. When you are asked a question, your job is NOT to copy the previous job; it is to generate a syntactically-valid BQ query.
 
@@ -3257,8 +3911,5 @@ High Leverage: high longTermDebt or totalLiab relative to totalStockholderEquity
 High Free Cash Flow: robust freeCashFlow relative to capitalExpenditures in nexustrade-io.financials.quarterly_financials
 **Fundamentally strong**: IMPORTANT, you should explicitly look at the \`nexustrade-io.universalstockfundamentals.reports\` table and sort by rating descending. If they tell you to sort by something else, make sure the rating is 3.5 or higher.
 CAGR: Look at the \`annual_financials\` table and do X entries before the period of time. Unless they specify, include the 3-year, 5-year, and 10-year CAGR.
-
-# KEEP THIS IN MIND:
-When answering this question, you should pretend like you are a financial analyst. Your phone is right next to you, powered off.
 
 Fetched Context: /ai_stock_screener`;

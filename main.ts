@@ -58,6 +58,14 @@ interface AggregateStatistics {
   };
 }
 
+interface CheckpointData {
+  queryModel: AiModelEnum;
+  evaluationModels: AiModelEnum[];
+  completedQuestions: number;
+  results: QuestionResult[];
+  timestamp: string;
+}
+
 class BatchSQLEvaluator {
   private systemPrompt: string;
   private evaluationPrompt: string;
@@ -66,6 +74,9 @@ class BatchSQLEvaluator {
   private bigquery: BigQuery;
   private questions: string[];
   private results: QuestionResult[] = [];
+  private checkpointDir: string = "./checkpoints";
+  private checkpointFile: string;
+  private QUESTION_TIMEOUT_MS: number = 4 * 60 * 1000; // 4 minutes
 
   constructor({
     systemPrompt,
@@ -89,6 +100,13 @@ class BatchSQLEvaluator {
     // Initialize BigQuery with credentials from environment variable
     const credentials = this.setupCredentials();
     this.bigquery = new BigQuery({ credentials });
+
+    // Setup checkpoint file path
+    const modelName = queryModel.replace(/\//g, "_");
+    this.checkpointFile = path.join(
+      this.checkpointDir,
+      `checkpoint_${modelName}.json`
+    );
   }
 
   private setupCredentials() {
@@ -102,6 +120,130 @@ class BatchSQLEvaluator {
       return JSON.parse(credentialsJson);
     } catch (error) {
       throw new Error("Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON");
+    }
+  }
+
+  /**
+   * Create a timeout promise that rejects after specified milliseconds
+   */
+  private createTimeoutPromise(
+    ms: number,
+    operationName: string
+  ): Promise<never> {
+    return new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(
+          new Error(`Operation '${operationName}' timed out after ${ms}ms`)
+        );
+      }, ms);
+    });
+  }
+
+  /**
+   * Execute a promise with a timeout
+   */
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    operationName: string
+  ): Promise<T> {
+    return Promise.race([
+      promise,
+      this.createTimeoutPromise(timeoutMs, operationName),
+    ]);
+  }
+
+  /**
+   * Save checkpoint data to disk
+   */
+  private async saveCheckpoint(completedQuestions: number): Promise<void> {
+    // Create checkpoint directory if it doesn't exist
+    if (!fs.existsSync(this.checkpointDir)) {
+      fs.mkdirSync(this.checkpointDir, { recursive: true });
+    }
+
+    const checkpointData: CheckpointData = {
+      queryModel: this.queryModel,
+      evaluationModels: this.evaluationModels,
+      completedQuestions,
+      results: this.results,
+      timestamp: new Date().toISOString(),
+    };
+
+    fs.writeFileSync(
+      this.checkpointFile,
+      JSON.stringify(checkpointData, null, 2)
+    );
+    console.log(
+      `Checkpoint saved: ${completedQuestions}/${this.questions.length} questions completed`
+    );
+  }
+
+  /**
+   * Load checkpoint data if it exists
+   */
+  private loadCheckpoint(): CheckpointData | null {
+    if (fs.existsSync(this.checkpointFile)) {
+      try {
+        const data = fs.readFileSync(this.checkpointFile, "utf-8");
+        const checkpoint = JSON.parse(data) as CheckpointData;
+
+        // Verify checkpoint is for the same model configuration
+        if (
+          checkpoint.queryModel === this.queryModel &&
+          JSON.stringify(checkpoint.evaluationModels) ===
+            JSON.stringify(this.evaluationModels)
+        ) {
+          console.log(
+            `Checkpoint found: Resuming from question ${
+              checkpoint.completedQuestions + 1
+            }`
+          );
+          return checkpoint;
+        } else {
+          console.log(
+            "Checkpoint found but for different model configuration. Starting fresh."
+          );
+          return null;
+        }
+      } catch (error) {
+        console.error("Error loading checkpoint:", error);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Delete checkpoint file
+   */
+  private deleteCheckpoint(): void {
+    if (fs.existsSync(this.checkpointFile)) {
+      fs.unlinkSync(this.checkpointFile);
+      console.log("Checkpoint deleted");
+    }
+  }
+
+  /**
+   * Delete all checkpoint files in the checkpoint directory
+   */
+  cleanupAllCheckpoints(): void {
+    if (fs.existsSync(this.checkpointDir)) {
+      const files = fs.readdirSync(this.checkpointDir);
+      const checkpointFiles = files.filter(
+        (f) => f.startsWith("checkpoint_") && f.endsWith(".json")
+      );
+
+      checkpointFiles.forEach((file) => {
+        const filePath = path.join(this.checkpointDir, file);
+        fs.unlinkSync(filePath);
+        console.log(`Deleted checkpoint: ${file}`);
+      });
+
+      // Remove directory if empty
+      if (fs.readdirSync(this.checkpointDir).length === 0) {
+        fs.rmdirSync(this.checkpointDir);
+      }
     }
   }
 
@@ -292,7 +434,9 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
     };
   }
 
-  private async processQuestion(question: string): Promise<QuestionResult> {
+  private async processQuestionWithTimeout(
+    question: string
+  ): Promise<QuestionResult> {
     console.log(`\nProcessing question: "${question}"`);
 
     const result: QuestionResult = {
@@ -308,7 +452,44 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
     const startTime = Date.now();
 
     try {
-      // Step 1: Send system prompt to generate SQL using Gemini Flash 2
+      // Wrap the entire question processing in a timeout
+      const processedResult = await this.withTimeout(
+        this.processQuestionInternal(question),
+        this.QUESTION_TIMEOUT_MS,
+        `processing question: "${question}"`
+      );
+
+      return processedResult;
+    } catch (error: any) {
+      result.errorOccurred = true;
+      result.errorMessage = error.message;
+      result.score = 0; // Explicitly set score to 0 for failed queries
+      console.error("Error processing question:", error.message);
+
+      const endTime = Date.now();
+      result.executionTimeMs = endTime - startTime;
+
+      return result;
+    }
+  }
+
+  private async processQuestionInternal(
+    question: string
+  ): Promise<QuestionResult> {
+    const result: QuestionResult = {
+      question,
+      sql: "",
+      score: 0,
+      explanation: "",
+      resultCount: 0,
+      executionTimeMs: 0,
+      errorOccurred: false,
+    };
+
+    const startTime = Date.now();
+
+    try {
+      // Step 1: Send system prompt to generate SQL
       const messages: ChatMessage[] = [
         { role: "system", content: this.systemPrompt },
         {
@@ -344,7 +525,7 @@ When answering this question, you should pretend like you are a financial analys
         console.log(`Query returned ${results.length} results`);
       }
 
-      // Step 4: Evaluate results using Claude 3.7 Sonnet
+      // Step 4: Evaluate results
       const evaluation = await this.evaluateResults(
         queryResponse.sql,
         queryResponse.content,
@@ -359,12 +540,13 @@ When answering this question, you should pretend like you are a financial analys
     } catch (error: any) {
       result.errorOccurred = true;
       result.errorMessage = error.message;
-      result.score = 0; // Explicitly set score to 0 for failed queries
-      console.error("Error processing question:", error.message);
+      result.score = 0;
+      throw error; // Re-throw to be caught by timeout wrapper
     }
 
     const endTime = Date.now();
-    console.log(`Processing time: ${endTime - startTime}ms`);
+    result.executionTimeMs = endTime - startTime;
+    console.log(`Processing time: ${result.executionTimeMs}ms`);
 
     return result;
   }
@@ -464,10 +646,25 @@ When answering this question, you should pretend like you are a financial analys
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
+    // Load checkpoint if it exists
+    const checkpoint = this.loadCheckpoint();
+    let startIndex = 0;
+
+    if (checkpoint) {
+      this.results = checkpoint.results;
+      startIndex = checkpoint.completedQuestions;
+    }
+
     // Process each question sequentially
-    for (const question of this.questions) {
-      const result = await this.processQuestion(question);
+    for (let i = startIndex; i < this.questions.length; i++) {
+      const question = this.questions[i];
+      console.log(`\nProcessing question ${i + 1}/${this.questions.length}`);
+
+      const result = await this.processQuestionWithTimeout(question);
       this.results.push(result);
+
+      // Save checkpoint after each question
+      await this.saveCheckpoint(i + 1);
     }
 
     // Calculate statistics
@@ -506,6 +703,9 @@ When answering this question, you should pretend like you are a financial analys
         2
       )
     );
+
+    // Delete checkpoint after successful completion
+    this.deleteCheckpoint();
 
     // Print summary
     console.log("\n========== EVALUATION SUMMARY ==========");
@@ -572,24 +772,30 @@ async function main() {
 
   // Define the models to test
   const queryModels = [
-    RequestyAiModelEnum.gpt4o,
-    RequestyAiModelEnum.gpt4OneNano,
-    RequestyAiModelEnum.deepSeekV3,
+    RequestyAiModelEnum.gpt4One,
+    RequestyAiModelEnum.o4Mini,
+    RequestyAiModelEnum.o3,
+    OpenRouterAiModelEnum.gemini25FlashMay,
     OpenRouterAiModelEnum.geminiFlash2,
     OpenRouterAiModelEnum.gemini25Pro,
-    OpenRouterAiModelEnum.llama4Maverick,
-    RequestyAiModelEnum.claude37Sonnet,
-    OpenRouterAiModelEnum.claude37SonnetThinking,
-    RequestyAiModelEnum.grok3Mini,
+    OpenRouterAiModelEnum.grok4,
     RequestyAiModelEnum.grok3,
-    RequestyAiModelEnum.gpt4One,
-    RequestyAiModelEnum.gpt4OneNano,
-    RequestyAiModelEnum.gpt4OneMini,
-    RequestyAiModelEnum.o3Mini,
-    RequestyAiModelEnum.o3,
-    RequestyAiModelEnum.o4Mini,
-    RequestyAiModelEnum.o4MiniLow,
-    RequestyAiModelEnum.o4MiniHigh,
+    RequestyAiModelEnum.claudeOpus4,
+    RequestyAiModelEnum.claude37Sonnet,
+    RequestyAiModelEnum.claudeSonnet4,
+    // RequestyAiModelEnum.gpt4o,
+    // RequestyAiModelEnum.gpt4OneNano,
+    // RequestyAiModelEnum.deepSeekV3,
+    // OpenRouterAiModelEnum.llama4Maverick,
+    // RequestyAiModelEnum.claudeOpus4,
+    // OpenRouterAiModelEnum.claude37SonnetThinking,
+    // RequestyAiModelEnum.grok3Mini,
+    // RequestyAiModelEnum.gpt4OneNano,
+    // RequestyAiModelEnum.gpt4OneMini,
+    // RequestyAiModelEnum.o3Mini,
+    // RequestyAiModelEnum.o4MiniLow,
+    // RequestyAiModelEnum.o4MiniHigh,
+    // OpenRouterAiModelEnum.cypherAlpha,
   ];
 
   // Define the evaluation models
@@ -668,6 +874,17 @@ async function main() {
   });
 
   console.log("\n========== EVALUATION COMPLETE ==========");
+
+  // Clean up all checkpoints at the very end
+  console.log("\nCleaning up all checkpoint files...");
+  const tempEvaluator = new BatchSQLEvaluator({
+    systemPrompt,
+    evaluationPrompt,
+    queryModel: queryModels[0],
+    evaluationModels,
+    questions: [],
+  });
+  tempEvaluator.cleanupAllCheckpoints();
 }
 
 (async () => {

@@ -30,14 +30,21 @@ export enum RequestyAiModelEnum {
   o4Mini = "openai/o4-mini-2025-04-16",
   o4MiniLow = "openai/o4-mini:low",
   o4MiniHigh = "openai/o4-mini:high",
+  claudeOpus4 = "anthropic/claude-opus-4-20250514",
+  claudeSonnet4 = "vertex/anthropic/claude-4-sonnet",
 }
 
 export enum OpenRouterAiModelEnum {
   llama4Maverick = "meta-llama/llama-4-maverick",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   gpt4o = "openai/gpt-4o",
+  gemini25FlashMay = "google/gemini-2.5-flash-preview-05-20",
+  gemini25FlashMayThinking = "google/gemini-2.5-flash-preview-05-20:thinking",
   gemini25Pro = "google/gemini-2.5-pro-preview-03-25",
+  gemini25ProMay = "google/gemini-2.5-pro-preview",
   claude37SonnetThinking = "anthropic/claude-3.7-sonnet:thinking",
+  deepseekProverV2 = "deepseek/deepseek-prover-v2",
+  grok4 = "x-ai/grok-4-07-09",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;
@@ -66,7 +73,7 @@ export class ModelRouter {
     this.model = model;
     // Default retry options with sensible defaults
     this.retryOptions = {
-      maxRetries: 3,
+      maxRetries: 10,
       initialDelayMs: 4000,
       maxDelayMs: 30000,
       backoffFactor: 2,
@@ -80,17 +87,17 @@ export class ModelRouter {
   public async sendToModel(messages: ChatMessage[]): Promise<string> {
     // if this is a Requesty model, send to Requesty
     if (
-      Object.values(RequestyAiModelEnum).includes(
-        this.model as RequestyAiModelEnum
+      Object.values(OpenRouterAiModelEnum).includes(
+        this.model as OpenRouterAiModelEnum
       )
     ) {
       return this.sendWithRetry(() =>
-        this.sendToRequesty(messages, this.model as RequestyAiModelEnum)
+        this.sendToOpenRouter(messages, this.model as OpenRouterAiModelEnum)
       );
     }
 
     return this.sendWithRetry(() =>
-      this.sendToOpenRouter(messages, this.model as OpenRouterAiModelEnum)
+      this.sendToRequesty(messages, this.model as RequestyAiModelEnum)
     );
   }
 
