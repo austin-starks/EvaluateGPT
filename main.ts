@@ -783,24 +783,11 @@ async function main() {
     RequestyAiModelEnum.claudeOpus4,
     RequestyAiModelEnum.claude37Sonnet,
     RequestyAiModelEnum.claudeSonnet4,
-    // RequestyAiModelEnum.gpt4o,
-    // RequestyAiModelEnum.gpt4OneNano,
-    // RequestyAiModelEnum.deepSeekV3,
-    // OpenRouterAiModelEnum.llama4Maverick,
-    // RequestyAiModelEnum.claudeOpus4,
-    // OpenRouterAiModelEnum.claude37SonnetThinking,
-    // RequestyAiModelEnum.grok3Mini,
-    // RequestyAiModelEnum.gpt4OneNano,
-    // RequestyAiModelEnum.gpt4OneMini,
-    // RequestyAiModelEnum.o3Mini,
-    // RequestyAiModelEnum.o4MiniLow,
-    // RequestyAiModelEnum.o4MiniHigh,
-    // OpenRouterAiModelEnum.cypherAlpha,
   ];
 
   // Define the evaluation models
   const evaluationModels = [
-    RequestyAiModelEnum.claude37Sonnet,
+    RequestyAiModelEnum.claudeSonnet4,
     OpenRouterAiModelEnum.gemini25Pro,
     RequestyAiModelEnum.gpt4One,
   ];
