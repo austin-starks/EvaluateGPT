@@ -83,7 +83,7 @@ export const questions = [
   "Which companies have at least 2 years of dividend history and the highest dividend CAGR?",
   "Sort the MAG7 by their 5-year revenue CAGR",
   "What are the top 5 stocks by market cap with a 3-year net income CAGR greater than their 5-year net income CAGR and a net income above $1 billion?",
-  "What are the top 10 stocks by revenue with a 2025 percent gain so far greater than its total 2024 percent gain? Sort by market cap descending",
+  "What are the top 10 stocks with a 2025 percent gain so far greater than its total 2024 percent gain? Sort by revenue descending",
   "What biotech stocks have the highest 1-year net income increase (in terms of dollars)?",
   "What EV stocks had the highest drawdown in the past year?",
   "What stocks have increased 5% or more this week and had a volume spike of 3x their normal volume?",
