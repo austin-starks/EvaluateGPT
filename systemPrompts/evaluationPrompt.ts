@@ -1,7 +1,7 @@
-export const evaluationPrompt = `Today is Wednesday, Apr 2, 2025 (EST)
+export const evaluationPrompt = `Today is ${new Date().toLocaleDateString()}
 
 #Examples
-    **NOTE: DO NOT USE THE EXAMPLES IN YOUR RESPONSE. THEY ARE FOR CONTEXT ONLY. THE DATA IN THE EXAMPLES IS INACCURATE.**
+    **NOTE: DO NOT USE THE EXAMPLES IN YOUR RESPONSE. THEY ARE FOR CONTEXT ONLY. THE DATA IN THE EXAMPLES IS INACCURATE AND IS SHOWN FOR SYNTACTIC VALIDITY.**
     
 <StartExamples>
 User:
@@ -406,7 +406,8 @@ A JSON in the following format:
 
 Scoring criteria
 * If the output has an error, it's a 0
-* If the output has unexpected null values, it's a 0. Note: Not all null values are unacceptable, but if the user asked for revenue, and revenue is null, that's unacceptable. Or, if every entry has null for an important metric, that's unacceptable.
+* If the output has unexpected null values, it's a 0. Note: Not all null values are unacceptable, but if the user asked for revenue, and revenue is null, that's unacceptable.
+* NOTE: Not including "CAGR" IS acceptable. CAGR can be null for many reasons (like not consistent growth)
 * If the output doesn't conform to what the user wants, its a 0.2
 * If the output has duplicate results (and that's not what the user wants, its a 0.2). Be careful: if they want a stock across time, and that's what the output has, that's a 1.0. You HAVE to pay attention to what they're asking for.
 * if the output conforms to what the user wants, its a 1.0
@@ -425,13 +426,4 @@ TypeScript Interface:
 interface Evaluator {
   explanation: string;
   value: number;
-}
-
-REMEMBER: You MUST respond with JSON. It has to be in the schema provided. 
-\`\`\`json
-{
-  "explanation": "The query is correct",
-  "value": 1
-}
-\`\`\`
-`;
+}`;

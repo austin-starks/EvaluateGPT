@@ -45,6 +45,7 @@ export enum OpenRouterAiModelEnum {
   deepseekProverV2 = "deepseek/deepseek-prover-v2",
   grok4 = "x-ai/grok-4-07-09",
   o3 = "openai/o3-2025-04-16",
+  horizonAlpha = "openrouter/horizon-alpha",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;

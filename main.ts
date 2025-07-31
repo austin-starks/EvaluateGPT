@@ -772,10 +772,11 @@ async function main() {
 
   // Define the models to test
   const queryModels = [
-    OpenRouterAiModelEnum.o3,
+    // OpenRouterAiModelEnum.o3,
     // RequestyAiModelEnum.gpt4One,
     // RequestyAiModelEnum.o4Mini,
-    // OpenRouterAiModelEnum.gemini25FlashMay,
+    OpenRouterAiModelEnum.gemini25FlashMay,
+    OpenRouterAiModelEnum.horizonAlpha,
     // OpenRouterAiModelEnum.geminiFlash2,
     // OpenRouterAiModelEnum.gemini25Pro,
     // OpenRouterAiModelEnum.grok4,
