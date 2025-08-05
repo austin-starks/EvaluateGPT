@@ -639,6 +639,7 @@ When answering this question, you should pretend like you are a financial analys
     // Create simplified records for CSV (without full query results)
     const csvRecords = results.map(r => ({
       question: r.question,
+      sql: r.sql,  // Include the SQL query
       score: r.score,
       resultCount: r.resultCount,
       executionTimeMs: r.executionTimeMs,
@@ -652,6 +653,7 @@ When answering this question, you should pretend like you are a financial analys
       path: outputPath,
       header: [
         { id: "question", title: "Question" },
+        { id: "sql", title: "SQL Query" },  // Add SQL query column
         { id: "score", title: "Score" },
         { id: "resultCount", title: "Result Count" },
         { id: "executionTimeMs", title: "Execution Time (ms)" },
