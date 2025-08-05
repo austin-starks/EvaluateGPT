@@ -3203,7 +3203,7 @@ The AI will answer these questions by querying a database. For general earnings 
 #Instructions
 # CONTEXT:
 
-Wednesday, Jul 30, 2025
+Tuesday, Aug 5, 2025
 IMPORTANT: If the user says the full stock name, use the ticker for that stock instead!!
 
 targetAsset/targetAssets: 
@@ -3397,7 +3397,7 @@ Also, fix the following:
 - pbRatioTTM: f64
 - enterpriseValue: f64
 - isInternational: bool
-
+- dividendYield: f64
 
 \`nexustrade-io.stockindustries.current\`
 - name: string

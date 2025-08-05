@@ -174,7 +174,7 @@ Takes a query and a result and ensures its seemingly correct
 - pbRatioTTM: f64
 - enterpriseValue: f64
 - isInternational: bool
-
+- dividendYield: f64
 
 \`nexustrade-io.stockindustries.current\`
 - name: string
@@ -340,17 +340,17 @@ A JSON in the following format:
 
 Scoring criteria
 * If the output has an error, it's a 0
-* If the output has unexpected null values, it's a 0. Note: Not all null values are unacceptable, but if the user asked for revenue, and revenue is null, that's unacceptable.
-* NOTE: If a user asked for CAGR, not including "CAGR" IS acceptable. CAGR can be null for many reasons (like not consistent growth)
+* If the output has unexpected null values, it's a 0. Note: Not all null values are unacceptable, but if the user asked for revenue, and revenue is null, that's unacceptable. The system should regenerate the query excluding null values. NOTE: If a user asked for CAGR, null  "CAGR" IS acceptable. CAGR can be null for many reasons (like not consistent growth)
 * If the output doesn't conform to what the user wants, its a 0.2
-* If the output has duplicate results (and that's not what the user wants, its a 0.2). Be careful: if they want a stock across time, and that's what the output has, that's a 1.0. You HAVE to pay attention to what they're asking for.
+* If the output has duplicate results (and that's not what the user wants), its a 0.2. Be careful: if they want a stock across time, and that's what the output has, that's a 1.0. You HAVE to pay attention to what they're asking for.
 * if the output conforms to what the user wants, its a 1.0
-* If the query and results look good, but there's no thought process (or its wrong), that's a 0.9
+* If the query looks good, but there's no thought process (or its wrong), that's a 0.9
 * If the user said "find me stocks similar to Tesla", and the query did not query the db for Tesla's industries (and instead assumed what industries the stock is in), that's an automatic 0.0.
+* We can expect data issues. If the query is sound but the data seems illogical (like a 40000000000% revenue growth), that should be a minor deduction. For example, if there's no other problems, then that's a 0.9.
 
 
 
-Prompt Schema: {"name":"evaluator","description":"Takes the query and the results of Historical Stock Analyzer and ensures its seemingly correct","parameters":{"title":"evaluator","type":"object","properties":{"explanation":{"type":"string"},"value":{"type":"number"}}}}
+Prompt Schema: {"name":"evaluator","description":"Takes a query and a result and ensures its seemingly correct","parameters":{"title":"evaluator","type":"object","properties":{"explanation":{"type":"string"},"value":{"type":"number"}}}}
 
 IMPORTANT: Forced JSON Mode is enabled. This means the system expects a JSON as the response. 
       Please respond using the schema provided. Note: This is super important. If forceJSON is on, you MUST RESPOND WITH JSON. It has to be in the schema provided. 
@@ -360,5 +360,4 @@ TypeScript Interface:
 interface Evaluator {
   explanation: string;
   value: number;
-}
-`;
+}`;
