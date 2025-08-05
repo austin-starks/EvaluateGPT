@@ -1,73 +1,10 @@
 export const evaluationPrompt = `Today is ${new Date().toLocaleDateString()}
 
-#Examples
-    **NOTE: DO NOT USE THE EXAMPLES IN YOUR RESPONSE. THEY ARE FOR CONTEXT ONLY. THE DATA IN THE EXAMPLES IS INACCURATE AND IS SHOWN FOR SYNTACTIC VALIDITY.**
-    
-<StartExamples>
-User:
-what stocks are for quantum computing?
-User:
-{
-  "sql": "SELECT DISTINCT si.symbol, si.name, r.rating FROM \`nexustrade-io.stockindustries.current\` si LEFT JOIN ( SELECT ticker, rating, ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) as rn FROM \`nexustrade-io.universalstockfundamentals.reports\` ) r ON si.ticker = r.ticker AND r.rn = 1 WHERE si.quantumComputing = TRUE LIMIT 25"
-}
-
-symbol	name	rating
-ARQQW	Arqit Quantum Inc - Warrants (02/11/2026)	
-ARKK		
-AMPG	Amplitech Group Inc	
-QBTS	D-Wave Quantum Inc	1.0
-AMPGW	Amplitech Group Inc - Warrants (01/01/2026)	
-QUBT	Quantum Computing Inc	1.0
-RGTI	Rigetti Computing Inc	1.0
-QTUM		
-INTC	Intel Corp	3.0
-BAH	Booz Allen Hamilton Holding Corp - Class A	3.5
-TMAT		
-ARQQ	Arqit Quantum Inc	
-User:
-SYSTEM HINT: Even though there are null values, this is perfectly fine, because the user didn't say "what are the **best** quantum computing stocks. If they had, the ratings would be neccessary
-AI Assistant:
-
-{
-  "explanation": "The query correctly retrieves stocks related to quantum computing by joining the \`stockindustries.current\` table with the \`universalstockfundamentals.reports\` table. It filters for stocks where \`quantumComputing\` is true and selects the most recent rating for each stock. However, there are some null values in the results, which is acceptable since the user did not specify that they wanted the best stocks. The presence of null values does not affect the overall validity of the query. The relevant fields in the schema are:\n\n- **symbol**: The stock ticker symbol.\n- **name**: The name of the company associated with the stock.\n- **rating**: The rating of the stock, which can be null if no rating is available for that stock.\n\nOverall, the query meets the user's request for quantum computing stocks, even with some null values present.",
-  "value": 1
-}
-
-User:
-what stocks are the best quantum computing stocks?
-User:
-{
-  "sql": "SELECT DISTINCT si.symbol, si.name, r.rating FROM \`nexustrade-io.stockindustries.current\` si LEFT JOIN ( SELECT ticker, rating, ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY fiscalYear DESC, fiscalPeriod DESC) as rn FROM \`nexustrade-io.universalstockfundamentals.reports\` ) r ON si.ticker = r.ticker AND r.rn = 1 WHERE si.quantumComputing = TRUE LIMIT 25"
-}
-
-symbol	name	rating
-ARQQW	Arqit Quantum Inc - Warrants (02/11/2026)	
-ARKK		
-AMPG	Amplitech Group Inc	
-QBTS	D-Wave Quantum Inc	1.0
-AMPGW	Amplitech Group Inc - Warrants (01/01/2026)	
-QUBT	Quantum Computing Inc	1.0
-RGTI	Rigetti Computing Inc	1.0
-QTUM		
-INTC	Intel Corp	3.0
-BAH	Booz Allen Hamilton Holding Corp - Class A	3.5
-TMAT		
-ARQQ	Arqit Quantum Inc	
-AI Assistant:
-
-{
-  "explanation": "The query attempts to retrieve the best quantum computing stocks by joining the \`stockindustries.current\` table with the latest reports from \`universalstockfundamentals.reports\`. However, the query does not filter for the best stocks based on ratings; it simply retrieves stocks that are classified under quantum computing. The ratings are included, but there is no ordering by rating to ensure that only the best stocks are returned. To correct this, the query should order the results by rating in descending order before limiting the results to the top 25. Additionally, there are null values in the results, which indicates that some stocks do not have a rating, which is problematic when looking for the best stocks. Therefore, the query does not fully meet the user's request for the best quantum computing stocks.",
-  "value": 0.2
-}
-
-<EndExamples>
-Important Note: The examples above are for context only. The data in the examples is inaccurate. DO NOT use these examples in your response. They ONLY show what the expected response might look like. **Always** use the context in the conversation as the source of truth.
-
 #Description
-Takes the query and the results of Historical Stock Analyzer and ensures its seemingly correct
+Takes a query and a result and ensures its seemingly correct
 
 #Instructions
-\`nexustrade-io.universalstockfundamentals.reports\`
+\`nexustrade-io.financials.reports\`
 - ticker: string
 - fiscalPeriod: string // 'Q1', 'Q2', 'Q3', 'Q4' , or 'FY'
 - fiscalYear: int
@@ -222,33 +159,21 @@ Takes the query and the results of Historical Stock Analyzer and ensures its see
 - closingPrice: f64
 - tradingVolume: f64
 
-\`nexustrade-io.universalstockfundamentals.price_data\`
+\`nexustrade-io.financials.stock_price_metrics\`
 - ticker: string
 - symbol: string
 - date: timestamp
 - openingPrice: f64
 - highestPrice: f64
 - lowestPrice: f64
-- lastClosingPrice: f64
-- adjustedClosingPrice: f64
-- tradingVolume: int
-- commonSharesOutstanding: f64
+- closingPrice: f64
 - marketCap: f64
-- priceToEarningsRatioQuarterly: f64
-- priceToEarningsRatioTTM: f64
-- priceToSalesRatioQuarterly: f64
-- priceToSalesRatioTTM: f64
-- priceToBookValueTTM: f64
-- priceToFreeCashFlowQuarterly: f64
-- priceToFreeCashFlowTTM: f64
-- enterpriseValueTTM: f64
-- evEbitdaTTM: f64
-- evSalesTTM: f64
-- evFcfTTM: f64
-- bookToMarketValueTTM: f64
-- operatingIncomeEvTTM: f64
-- altmanZScoreTTM: f64
-- dividendYield: f64 // shows the TTM dividend yield for a stock
+- volume: f64
+- peRatioTTM: f64
+- psRatioTTM: f64
+- pbRatioTTM: f64
+- enterpriseValue: f64
+- isInternational: bool
 
 
 \`nexustrade-io.stockindustries.current\`
@@ -392,6 +317,15 @@ Takes the query and the results of Historical Stock Analyzer and ensures its see
 - epsActual: f64
 - epsDifference: f64
 - surprisePercent: f64
+nexustrade-io.financials.dividends schema
+- ticker: string
+- cashAmount: number
+- declarationDate: Date
+- exDividendDate: Date
+- recordDate: Date
+- payDate: Date
+- dividendType: string
+- frequency: number
 
 You are a query analyzer. You determine if a query is correct according to what the user wants.
 
@@ -407,7 +341,7 @@ A JSON in the following format:
 Scoring criteria
 * If the output has an error, it's a 0
 * If the output has unexpected null values, it's a 0. Note: Not all null values are unacceptable, but if the user asked for revenue, and revenue is null, that's unacceptable.
-* NOTE: Not including "CAGR" IS acceptable. CAGR can be null for many reasons (like not consistent growth)
+* NOTE: If a user asked for CAGR, not including "CAGR" IS acceptable. CAGR can be null for many reasons (like not consistent growth)
 * If the output doesn't conform to what the user wants, its a 0.2
 * If the output has duplicate results (and that's not what the user wants, its a 0.2). Be careful: if they want a stock across time, and that's what the output has, that's a 1.0. You HAVE to pay attention to what they're asking for.
 * if the output conforms to what the user wants, its a 1.0
@@ -426,4 +360,5 @@ TypeScript Interface:
 interface Evaluator {
   explanation: string;
   value: number;
-}`;
+}
+`;
