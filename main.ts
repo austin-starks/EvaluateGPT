@@ -625,10 +625,7 @@ When answering this question, you should pretend like you are a financial analys
     outputPath: string
   ): Promise<void> {
     // Export full results including query results to JSON
-    fs.writeFileSync(
-      outputPath,
-      JSON.stringify(results, null, 2)
-    );
+    fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
     console.log(`Full results exported to ${outputPath}`);
   }
 
@@ -637,23 +634,25 @@ When answering this question, you should pretend like you are a financial analys
     outputPath: string
   ): Promise<void> {
     // Create simplified records for CSV (without full query results)
-    const csvRecords = results.map(r => ({
+    const csvRecords = results.map((r) => ({
       question: r.question,
-      sql: r.sql,  // Include the SQL query
+      sql: r.sql, // Include the SQL query
       score: r.score,
       resultCount: r.resultCount,
       executionTimeMs: r.executionTimeMs,
       errorOccurred: r.errorOccurred,
-      errorMessage: r.errorMessage || '',
+      errorMessage: r.errorMessage || "",
       // Add first few result rows as sample
-      sampleResults: r.queryResults ? JSON.stringify(r.queryResults.slice(0, 3)) : '[]'
+      sampleResults: r.queryResults
+        ? JSON.stringify(r.queryResults.slice(0, 3))
+        : "[]",
     }));
 
     const csvWriter = createObjectCsvWriter({
       path: outputPath,
       header: [
         { id: "question", title: "Question" },
-        { id: "sql", title: "SQL Query" },  // Add SQL query column
+        { id: "sql", title: "SQL Query" }, // Add SQL query column
         { id: "score", title: "Score" },
         { id: "resultCount", title: "Result Count" },
         { id: "executionTimeMs", title: "Execution Time (ms)" },
@@ -705,7 +704,7 @@ When answering this question, you should pretend like you are a financial analys
     const modelInfo = `${this.queryModel}_${this.evaluationModels.join(
       "_"
     )}`.replace(/\//g, "_");
-    
+
     // Export to both CSV (summary) and JSON (full results with query data)
     const csvPath = path.join(
       outputDir,
@@ -814,6 +813,7 @@ async function main() {
     // RequestyAiModelEnum.o4Mini,
     OpenRouterAiModelEnum.gemini25FlashMay,
     OpenRouterAiModelEnum.gptOss120b,
+    OpenRouterAiModelEnum.gptOss20b,
     OpenRouterAiModelEnum.gemini25Pro,
     // OpenRouterAiModelEnum.horizonBeta,
     // OpenRouterAiModelEnum.geminiFlash2,

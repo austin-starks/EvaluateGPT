@@ -46,6 +46,7 @@ export enum OpenRouterAiModelEnum {
   o3 = "openai/o3-2025-04-16",
   horizonBeta = "openrouter/horizon-beta",
   gptOss120b = "openai/gpt-oss-120b",
+  gptOss20b = "openai/gpt-oss-20b",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;
