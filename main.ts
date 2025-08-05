@@ -776,7 +776,7 @@ async function main() {
     // RequestyAiModelEnum.gpt4One,
     // RequestyAiModelEnum.o4Mini,
     OpenRouterAiModelEnum.gemini25FlashMay,
-    OpenRouterAiModelEnum.horizonAlpha,
+    OpenRouterAiModelEnum.horizonBeta,
     // OpenRouterAiModelEnum.geminiFlash2,
     // OpenRouterAiModelEnum.gemini25Pro,
     // OpenRouterAiModelEnum.grok4,
