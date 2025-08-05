@@ -39,6 +39,7 @@ interface QuestionResult {
   executionTimeMs: number;
   errorOccurred: boolean;
   errorMessage?: string;
+  queryResults?: any[]; // Store the actual query results
 }
 
 interface AggregateStatistics {
@@ -484,6 +485,7 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
       resultCount: 0,
       executionTimeMs: 0,
       errorOccurred: false,
+      queryResults: [],
     };
 
     const startTime = Date.now();
@@ -518,6 +520,7 @@ When answering this question, you should pretend like you are a financial analys
 
       result.resultCount = results.length;
       result.executionTimeMs = queryEnd - queryStart;
+      result.queryResults = results; // Store the actual query results
 
       if (results.length === 0) {
         console.log("Warning: No results found for query");
@@ -617,10 +620,34 @@ When answering this question, you should pretend like you are a financial analys
     };
   }
 
+  private async exportResultsToJSON(
+    results: QuestionResult[],
+    outputPath: string
+  ): Promise<void> {
+    // Export full results including query results to JSON
+    fs.writeFileSync(
+      outputPath,
+      JSON.stringify(results, null, 2)
+    );
+    console.log(`Full results exported to ${outputPath}`);
+  }
+
   private async exportResultsToCSV(
     results: QuestionResult[],
     outputPath: string
   ): Promise<void> {
+    // Create simplified records for CSV (without full query results)
+    const csvRecords = results.map(r => ({
+      question: r.question,
+      score: r.score,
+      resultCount: r.resultCount,
+      executionTimeMs: r.executionTimeMs,
+      errorOccurred: r.errorOccurred,
+      errorMessage: r.errorMessage || '',
+      // Add first few result rows as sample
+      sampleResults: r.queryResults ? JSON.stringify(r.queryResults.slice(0, 3)) : '[]'
+    }));
+
     const csvWriter = createObjectCsvWriter({
       path: outputPath,
       header: [
@@ -630,11 +657,12 @@ When answering this question, you should pretend like you are a financial analys
         { id: "executionTimeMs", title: "Execution Time (ms)" },
         { id: "errorOccurred", title: "Error Occurred" },
         { id: "errorMessage", title: "Error Message" },
+        { id: "sampleResults", title: "Sample Results (First 3 Rows)" },
       ],
     });
 
-    await csvWriter.writeRecords(results);
-    console.log(`Results exported to ${outputPath}`);
+    await csvWriter.writeRecords(csvRecords);
+    console.log(`Summary results exported to ${outputPath}`);
   }
 
   public async runBatch(outputDir: string = "./output"): Promise<{
@@ -675,16 +703,23 @@ When answering this question, you should pretend like you are a financial analys
     const modelInfo = `${this.queryModel}_${this.evaluationModels.join(
       "_"
     )}`.replace(/\//g, "_");
-    const resultsPath = path.join(
+    
+    // Export to both CSV (summary) and JSON (full results with query data)
+    const csvPath = path.join(
       outputDir,
-      `results_${modelInfo}_${timestamp}.csv`
+      `results_summary_${modelInfo}_${timestamp}.csv`
+    );
+    const fullResultsPath = path.join(
+      outputDir,
+      `results_full_${modelInfo}_${timestamp}.json`
     );
     const statsPath = path.join(
       outputDir,
       `statistics_${modelInfo}_${timestamp}.json`
     );
 
-    await this.exportResultsToCSV(this.results, resultsPath);
+    await this.exportResultsToCSV(this.results, csvPath);
+    await this.exportResultsToJSON(this.results, fullResultsPath);
     fs.writeFileSync(
       statsPath,
       JSON.stringify(
@@ -777,9 +812,9 @@ async function main() {
     // RequestyAiModelEnum.o4Mini,
     OpenRouterAiModelEnum.gemini25FlashMay,
     OpenRouterAiModelEnum.gptOss120b,
+    OpenRouterAiModelEnum.gemini25Pro,
     // OpenRouterAiModelEnum.horizonBeta,
     // OpenRouterAiModelEnum.geminiFlash2,
-    // OpenRouterAiModelEnum.gemini25Pro,
     // OpenRouterAiModelEnum.grok4,
     // RequestyAiModelEnum.grok3,
     // RequestyAiModelEnum.claudeOpus4,
