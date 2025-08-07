@@ -811,12 +811,14 @@ async function main() {
     // OpenRouterAiModelEnum.o3,
     // RequestyAiModelEnum.gpt4One,
     // RequestyAiModelEnum.o4Mini,
-    // OpenRouterAiModelEnum.gemini25FlashMay,
     // OpenRouterAiModelEnum.gptOss120b,
+    // OpenRouterAiModelEnum.horizonBeta,
+    OpenRouterAiModelEnum.gemini25Pro,
+    OpenRouterAiModelEnum.gemini25FlashMay,
+    RequestyAiModelEnum.o4Mini,
     RequestyAiModelEnum.gpt5Nano,
     RequestyAiModelEnum.gpt5Mini,
     RequestyAiModelEnum.gpt5,
-    // OpenRouterAiModelEnum.horizonBeta,
     // OpenRouterAiModelEnum.geminiFlash2,
     // OpenRouterAiModelEnum.grok4,
     // RequestyAiModelEnum.grok3,
@@ -827,9 +829,9 @@ async function main() {
 
   // Define the evaluation models
   const evaluationModels = [
-    RequestyAiModelEnum.claudeSonnet4,
+    // RequestyAiModelEnum.claudeSonnet4,
     OpenRouterAiModelEnum.gemini25Pro,
-    RequestyAiModelEnum.gpt4One,
+    // RequestyAiModelEnum.gpt4One,
   ];
 
   console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");

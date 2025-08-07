@@ -3400,12 +3400,8 @@ Also, fix the following:
 - dividendYield: f64
 
 \`nexustrade-io.stockindustries.current\`
-- name: string
 - symbol: string
 - ticker: string
-- ipoDate: Date
-- exchange: string
-- description: string
 - 3dPrinting: bool
 - advertising: bool
 - aerospace: bool

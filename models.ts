@@ -5,6 +5,9 @@ const getTemperature = (model: AiModelEnum): number => {
     OpenRouterAiModelEnum.o3,
     RequestyAiModelEnum.o3Mini,
     RequestyAiModelEnum.o4Mini,
+    RequestyAiModelEnum.gpt5Nano,
+    RequestyAiModelEnum.gpt5Mini,
+    RequestyAiModelEnum.gpt5,
   ];
   if (modelsWhereTemperatureIs1.includes(model as RequestyAiModelEnum)) {
     return 1;
@@ -23,6 +26,7 @@ export enum RequestyAiModelEnum {
   grok3Mini = "xai/grok-3-mini-beta",
   grok3 = "xai/grok-3-beta",
   o3Mini = "openai/o3-mini",
+  o3 = "openai/o3",
   gpt4One = "openai/gpt-4.1-2025-04-14",
   gpt4OneMini = "openai/gpt-4.1-mini-2025-04-14",
   gpt4OneNano = "openai/gpt-4.1-nano-2025-04-14",
@@ -41,10 +45,7 @@ export enum OpenRouterAiModelEnum {
   geminiFlash2 = "google/gemini-2.0-flash-001",
   gpt4o = "openai/gpt-4o",
   gemini25FlashMay = "google/gemini-2.5-flash",
-  gemini25Pro = "google/gemini-2.5-pro-preview-03-25",
-  gemini25ProMay = "google/gemini-2.5-pro-preview",
-  claude37SonnetThinking = "anthropic/claude-3.7-sonnet:thinking",
-  deepseekProverV2 = "deepseek/deepseek-prover-v2",
+  gemini25Pro = "google/gemini-2.5-pro",
   grok4 = "x-ai/grok-4-07-09",
   o3 = "openai/o3-2025-04-16",
   horizonBeta = "openrouter/horizon-beta",
