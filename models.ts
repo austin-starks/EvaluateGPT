@@ -31,6 +31,9 @@ export enum RequestyAiModelEnum {
   o4MiniHigh = "openai/o4-mini:high",
   claudeOpus4 = "anthropic/claude-opus-4-20250514",
   claudeSonnet4 = "vertex/anthropic/claude-4-sonnet",
+  gpt5 = "openai/gpt-5",
+  gpt5Mini = "openai/gpt-5-mini",
+  gpt5Nano = "openai/gpt-5-nano",
 }
 
 export enum OpenRouterAiModelEnum {
