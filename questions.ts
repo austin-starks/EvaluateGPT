@@ -12,7 +12,7 @@ export const questions = [
   "Which bank stocks have the lowest price-to-book ratios?",
   "What were the top 10 best performing stocks of last year?",
   "Which EV companies have the highest debt-to-equity ratios?",
-  "What is the correlation in returns between Robinhood (HOOD) and Reddit (RDDT) in the past 6 months? What about the past 6 weeks?",
+  "What is the correlation in returns between Coinbase (COIN) and Reddit (RDDT) in the past 6 months? What about the past 6 weeks?",
   "What non-technology stocks have increased their revenue and net income every year for the past 3 years?",
   "What cloud computing stocks have increased their free cash flow every quarter for the past 4 quarters?",
   "What companies have the highest 10-year revenue CAGR?",

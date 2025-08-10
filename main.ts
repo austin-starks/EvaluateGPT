@@ -677,23 +677,42 @@ When answering this question, you should pretend like you are a financial analys
 
     // Load checkpoint if it exists
     const checkpoint = this.loadCheckpoint();
-    let startIndex = 0;
 
     if (checkpoint) {
-      this.results = checkpoint.results;
-      startIndex = checkpoint.completedQuestions;
+      // Only keep results for questions that still exist
+      this.results = checkpoint.results.filter((r) =>
+        this.questions.includes(r.question)
+      );
+      console.log(
+        `Loaded ${this.results.length} completed question(s) from checkpoint`
+      );
+    } else {
+      this.results = [];
     }
 
-    // Process each question sequentially
-    for (let i = startIndex; i < this.questions.length; i++) {
+    // Process each question, skipping those already completed
+    for (let i = 0; i < this.questions.length; i++) {
       const question = this.questions[i];
+
+      const alreadyCompleted = this.results.some(
+        (r) => r.question === question
+      );
+      if (alreadyCompleted) {
+        console.log(
+          `Skipping question ${i + 1}/${
+            this.questions.length
+          } (already completed)`
+        );
+        continue;
+      }
+
       console.log(`\nProcessing question ${i + 1}/${this.questions.length}`);
 
       const result = await this.processQuestionWithTimeout(question);
       this.results.push(result);
 
-      // Save checkpoint after each question
-      await this.saveCheckpoint(i + 1);
+      // Save checkpoint after each question (count based on total completed)
+      await this.saveCheckpoint(this.results.length);
     }
 
     // Calculate statistics
@@ -813,12 +832,14 @@ async function main() {
     // RequestyAiModelEnum.o4Mini,
     // OpenRouterAiModelEnum.gptOss120b,
     // OpenRouterAiModelEnum.horizonBeta,
-    OpenRouterAiModelEnum.gemini25Pro,
-    OpenRouterAiModelEnum.gemini25FlashMay,
-    RequestyAiModelEnum.o4Mini,
-    RequestyAiModelEnum.gpt5Nano,
-    RequestyAiModelEnum.gpt5Mini,
+    // OpenRouterAiModelEnum.gemini25Pro,
+    // OpenRouterAiModelEnum.gemini25FlashMay,
+    // RequestyAiModelEnum.o4Mini,
+    // RequestyAiModelEnum.gpt5Nano,
+    // RequestyAiModelEnum.gpt5Mini,
     RequestyAiModelEnum.gpt5,
+    // RequestyAiModelEnum.gpt5Chat,
+    // RequestyAiModelEnum.gptOss120b,
     // OpenRouterAiModelEnum.geminiFlash2,
     // OpenRouterAiModelEnum.grok4,
     // RequestyAiModelEnum.grok3,
@@ -829,9 +850,9 @@ async function main() {
 
   // Define the evaluation models
   const evaluationModels = [
-    // RequestyAiModelEnum.claudeSonnet4,
+    RequestyAiModelEnum.claudeSonnet4,
     OpenRouterAiModelEnum.gemini25Pro,
-    // RequestyAiModelEnum.gpt4One,
+    RequestyAiModelEnum.o4Mini,
   ];
 
   console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");

@@ -347,11 +347,9 @@ Scoring criteria
 * If the query looks good, but there's no thought process (or its wrong), that's a 0.9
 * If the user said "find me stocks similar to Tesla", and the query did not query the db for Tesla's industries (and instead assumed what industries the stock is in), that's an automatic 0.0.
 * We can expect data issues. If the query is sound but the data seems illogical (like a 40000000000% revenue growth), that should be a minor deduction. For example, if there's no other problems, then that's a 0.9.
-
-Gotcha:
 * When looking for non-sector stocks (like non-technology stocks), it should be WHERE sector is NULL. That is correct.
 * The sector classifications are not perfect. As long as the query is correct, do not penalize for stocks appearing in the wrong sector.
-* Do not penalize severe data issues. If the data is bad, but the query is 100% correct, that's a 0.9. You can still point out issues in the explanation.
+* Do not penalize severe data issues. If the data is bad, but the query is 100% correct, that's still a 0.9. You can still point out issues in the explanation.
 
 Prompt Schema: {"name":"evaluator","description":"Takes a query and a result and ensures its seemingly correct","parameters":{"title":"evaluator","type":"object","properties":{"explanation":{"type":"string"},"value":{"type":"number"}}}}
 
@@ -363,4 +361,13 @@ TypeScript Interface:
 interface Evaluator {
   explanation: string;
   value: number;
-}`;
+}
+
+Respond in the following JSON format:
+\`\`\`json
+{
+  "explanation": "string",
+  "value": number
+}
+  \`\`\`
+  `;
