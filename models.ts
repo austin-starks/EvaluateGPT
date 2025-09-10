@@ -36,6 +36,8 @@ export enum RequestyAiModelEnum {
   claudeOpus4 = "anthropic/claude-opus-4-20250514",
   claudeSonnet4 = "vertex/anthropic/claude-4-sonnet",
   gpt5 = "openai/gpt-5",
+  gpt5Thinking = "openai/gpt-5:thinking",
+  gpt5MiniThinking = "openai/gpt-5-mini:thinking",
   gpt5Chat = "openai/gpt-5-chat",
   gpt5Mini = "openai/gpt-5-mini",
   gpt5Nano = "openai/gpt-5-nano",
@@ -43,6 +45,10 @@ export enum RequestyAiModelEnum {
 }
 
 export enum OpenRouterAiModelEnum {
+  bytedanceSeedOss36bInstruct = "bytedance/seed-oss-36b-instruct",
+  nvidiaNemotronNano9bV2 = "nvidia/nemotron-nano-9b-v2",
+  qwen3Max = "qwen/qwen3-max",
+  qwen330bThinking = "qwen/qwen3-30b-a3b-thinking-2507",
   llama4Maverick = "meta-llama/llama-4-maverick",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   gpt4o = "openai/gpt-4o",
@@ -71,6 +77,7 @@ export interface RetryOptions {
 
 export class ModelRouter {
   private model: AiModelEnum;
+  private thinking: boolean = false;
   private requestyBaseUrl: string =
     "https://router.requesty.ai/v1/chat/completions";
   private openRouterBaseUrl: string =
@@ -78,7 +85,15 @@ export class ModelRouter {
   private retryOptions: RetryOptions;
 
   constructor(model: AiModelEnum, retryOptions: Partial<RetryOptions> = {}) {
-    this.model = model;
+    // Parse thinking mode from model string
+    const modelsThinking = model.split(":");
+    if (modelsThinking.length > 1 && modelsThinking[1] === "thinking") {
+      this.thinking = true;
+      this.model = modelsThinking[0] as AiModelEnum;
+    } else {
+      this.model = model;
+    }
+
     // Default retry options with sensible defaults
     this.retryOptions = {
       maxRetries: 10,
@@ -161,17 +176,22 @@ export class ModelRouter {
     model: RequestyAiModelEnum
   ): Promise<string> {
     try {
-      const requestPayload = {
+      const requestPayload: any = {
         model,
         messages,
         temperature: getTemperature(model),
         requesty: {
           user_id: "EvaluateGPT",
+          auto_cache: true,
           extra: {
             title: "EvaluateGPT",
           },
         },
       };
+
+      if (this.thinking) {
+        requestPayload.reasoning_effort = "high";
+      }
 
       const apiKey = process.env.REQUESTY_API_KEY;
       if (!apiKey) {
@@ -209,12 +229,23 @@ export class ModelRouter {
     model: OpenRouterAiModelEnum
   ): Promise<string> {
     try {
-      const requestPayload = {
+      const requestPayload: any = {
         model,
         messages,
         temperature: getTemperature(model),
         user: "EvaluateGPT",
+        transforms: ["middle-out"],
+        provider: {
+          ignore: ["Fireworks", "Together", "Avian", "Featherless"],
+        },
       };
+
+      if (this.thinking) {
+        requestPayload.reasoning = {
+          effort: "high",
+          exclude: true,
+        };
+      }
 
       const apiKey = process.env.OPENROUTER_API_KEY;
       if (!apiKey) {

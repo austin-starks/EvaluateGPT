@@ -825,34 +825,18 @@ async function main() {
     throw new Error("REQUESTY_API_KEY environment variable is not set");
   }
 
-  // Define the models to test
   const queryModels = [
-    // OpenRouterAiModelEnum.o3,
-    // RequestyAiModelEnum.gpt4One,
-    // RequestyAiModelEnum.o4Mini,
-    // OpenRouterAiModelEnum.gptOss120b,
-    // OpenRouterAiModelEnum.horizonBeta,
-    // OpenRouterAiModelEnum.gemini25Pro,
-    // OpenRouterAiModelEnum.gemini25FlashMay,
-    // RequestyAiModelEnum.o4Mini,
-    // RequestyAiModelEnum.gpt5Nano,
-    // RequestyAiModelEnum.gpt5Mini,
-    RequestyAiModelEnum.gpt5,
-    // RequestyAiModelEnum.gpt5Chat,
-    // RequestyAiModelEnum.gptOss120b,
-    // OpenRouterAiModelEnum.geminiFlash2,
-    // OpenRouterAiModelEnum.grok4,
-    // RequestyAiModelEnum.grok3,
-    // RequestyAiModelEnum.claudeOpus4,
-    // RequestyAiModelEnum.claude37Sonnet,
-    // RequestyAiModelEnum.claudeSonnet4,
+    OpenRouterAiModelEnum.gemini25Pro,
+    OpenRouterAiModelEnum.gemini25FlashMay,
+    OpenRouterAiModelEnum.qwen3Max,
+    OpenRouterAiModelEnum.bytedanceSeedOss36bInstruct,
+    RequestyAiModelEnum.gpt5Mini,
   ];
 
   // Define the evaluation models
   const evaluationModels = [
-    RequestyAiModelEnum.claudeSonnet4,
-    OpenRouterAiModelEnum.gemini25Pro,
-    RequestyAiModelEnum.o4Mini,
+    OpenRouterAiModelEnum.gemini25FlashMay,
+    RequestyAiModelEnum.gpt5Mini,
   ];
 
   console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");
