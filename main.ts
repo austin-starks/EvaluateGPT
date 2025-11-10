@@ -502,7 +502,7 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
           role: "user",
           content: `${question}.
 
-Note: You MUST respond with a logically correct, syntactically valid SQL query that can be executed on the BigQuery database.          `,
+Note: You MUST respond with a logically correct, syntactically valid SQL query that can be executed on the BigQuery database.`,
         },
       ];
       const modelRouter = new ModelRouter(this.queryModel);
