@@ -88,4 +88,7 @@ export const questions = [
   "What EV stocks had the highest drawdown in the past year?",
   "What stocks have increased 5% or more this week and had a volume spike of 3x their normal volume?",
   "What stock with a market cap of below $50 billion in 2023 have a market cap above $150 billion now?",
+  "In the past 3 years, if NVDA opens down -0.7% or more, what is the probability it'll rise 1% intraday from open?",
+  "In the past 5 years, if MSFT opens up 1% or more, what is the probability it'll close higher?",
+  "What is the standard deviation of intraday returns for SPY in the past 10 years?",
 ];

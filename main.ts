@@ -352,12 +352,15 @@ class BatchSQLEvaluator {
   }
 
   private async evaluateResults(
+    userInput: string,
     sql: string,
     thoughtProcess: string,
     results: any[]
   ): Promise<EvaluationResult> {
     // Create the evaluation prompt
-    const evaluationContent = `SQL Query: ${sql}
+    const evaluationContent = `User Input: ${userInput}
+
+SQL Query: ${sql}
 
 Thought Process: ${thoughtProcess}
 
@@ -477,6 +480,7 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
   private async processQuestionInternal(
     question: string
   ): Promise<QuestionResult> {
+    console.log(`\nProcessing question: "${question}"`);
     const result: QuestionResult = {
       question,
       sql: "",
@@ -496,8 +500,9 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
         { role: "system", content: this.systemPrompt },
         {
           role: "user",
-          content: `User Query: ${question} \n# KEEP THIS IN MIND:
-When answering this question, you should pretend like you are a financial analyst. Your phone is right next to you, powered off.`,
+          content: `${question}.
+
+Note: You MUST respond with a logically correct, syntactically valid SQL query that can be executed on the BigQuery database.          `,
         },
       ];
       const modelRouter = new ModelRouter(this.queryModel);
@@ -530,6 +535,7 @@ When answering this question, you should pretend like you are a financial analys
 
       // Step 4: Evaluate results
       const evaluation = await this.evaluateResults(
+        question,
         queryResponse.sql,
         queryResponse.content,
         results
@@ -828,15 +834,14 @@ async function main() {
   const queryModels = [
     OpenRouterAiModelEnum.gemini25Pro,
     OpenRouterAiModelEnum.gemini25FlashMay,
-    OpenRouterAiModelEnum.qwen3Max,
-    OpenRouterAiModelEnum.bytedanceSeedOss36bInstruct,
-    RequestyAiModelEnum.gpt5Mini,
+    OpenRouterAiModelEnum.claudeHaiku45,
+    RequestyAiModelEnum.minimaxM2,
   ];
 
   // Define the evaluation models
   const evaluationModels = [
-    OpenRouterAiModelEnum.gemini25FlashMay,
-    RequestyAiModelEnum.gpt5Mini,
+    OpenRouterAiModelEnum.gemini25Pro,
+    OpenRouterAiModelEnum.claudeHaiku45,
   ];
 
   console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");

@@ -42,9 +42,11 @@ export enum RequestyAiModelEnum {
   gpt5Mini = "openai/gpt-5-mini",
   gpt5Nano = "openai/gpt-5-nano",
   gptOss120b = "openai/gpt-oss-120b",
+  minimaxM2 = "minimaxi/MiniMax-M2",
 }
 
 export enum OpenRouterAiModelEnum {
+  qwenPlus20250728Thinking = "qwen/qwen-plus-2025-07-28:thinking",
   bytedanceSeedOss36bInstruct = "bytedance/seed-oss-36b-instruct",
   nvidiaNemotronNano9bV2 = "nvidia/nemotron-nano-9b-v2",
   qwen3Max = "qwen/qwen3-max",
@@ -52,13 +54,14 @@ export enum OpenRouterAiModelEnum {
   llama4Maverick = "meta-llama/llama-4-maverick",
   geminiFlash2 = "google/gemini-2.0-flash-001",
   gpt4o = "openai/gpt-4o",
-  gemini25FlashMay = "google/gemini-2.5-flash",
+  gemini25FlashMay = "google/gemini-2.5-flash:thinking",
   gemini25Pro = "google/gemini-2.5-pro",
   grok4 = "x-ai/grok-4-07-09",
   o3 = "openai/o3-2025-04-16",
   horizonBeta = "openrouter/horizon-beta",
   gptOss120b = "openai/gpt-oss-120b",
   gptOss20b = "openai/gpt-oss-20b",
+  claudeHaiku45 = "anthropic/claude-haiku-4.5",
 }
 
 export type AiModelEnum = RequestyAiModelEnum | OpenRouterAiModelEnum;
@@ -118,7 +121,6 @@ export class ModelRouter {
         this.sendToOpenRouter(messages, this.model as OpenRouterAiModelEnum)
       );
     }
-
     return this.sendWithRetry(() =>
       this.sendToRequesty(messages, this.model as RequestyAiModelEnum)
     );
