@@ -834,8 +834,8 @@ async function main() {
   const queryModels = [
     OpenRouterAiModelEnum.gemini25Pro,
     OpenRouterAiModelEnum.gemini25FlashMay,
-    OpenRouterAiModelEnum.claudeHaiku45,
-    RequestyAiModelEnum.minimaxM2,
+    RequestyAiModelEnum.gpt5MiniThinking,
+    RequestyAiModelEnum.gpt5,
   ];
 
   // Define the evaluation models
