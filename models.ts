@@ -22,7 +22,7 @@ export enum RequestyAiModelEnum {
   deepSeekV3 = "nebius/deepseek-ai/DeepSeek-V3-0324",
   deepSeekR1 = "deepinfra/deepseek-ai/DeepSeek-R1",
   gpt4o = "openai/gpt-4o",
-  gemini25Pro = "google/gemini-2.5-pro-exp-03-25",
+  gemini25Pro = "google/gemini-2.5-pro",
   grok3Mini = "xai/grok-3-mini-beta",
   grok3 = "xai/grok-3-beta",
   o3Mini = "openai/o3-mini",
