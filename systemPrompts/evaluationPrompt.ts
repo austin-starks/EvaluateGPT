@@ -92,8 +92,18 @@ Prompt Schema: {"name":"evaluator","description":"Takes a query and a result and
 IMPORTANT: Forced JSON Mode is enabled. This means the system expects a JSON as the response. 
       Please respond using the schema (if provided). Always generate the explanation or description first (if applicable), then generate the JSON.
 
+
 TypeScript Interface:
 interface Evaluator {
   explanation: string;
   value: number;
-}`;
+}
+
+Respond in the following JSON format:
+\`\`\`json
+{
+  "explanation": "string",
+  "value": number
+}
+\`\`\`
+`;
