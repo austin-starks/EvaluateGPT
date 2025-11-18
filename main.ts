@@ -480,7 +480,6 @@ Results: ${JSON.stringify(results.slice(0, 10), null, 2)}${
   private async processQuestionInternal(
     question: string
   ): Promise<QuestionResult> {
-    console.log(`\nProcessing question: "${question}"`);
     const result: QuestionResult = {
       question,
       sql: "",
@@ -832,16 +831,18 @@ async function main() {
   }
 
   const queryModels = [
-    OpenRouterAiModelEnum.gemini25Pro,
-    OpenRouterAiModelEnum.gemini25FlashMay,
-    RequestyAiModelEnum.gpt5MiniThinking,
-    RequestyAiModelEnum.gpt5,
+    // OpenRouterAiModelEnum.gemini25Pro,
+    // RequestyAiModelEnum.claudeSonnet45,
+    RequestyAiModelEnum.gemini3ProPreview,
+    // RequestyAiModelEnum.gemini25Pro,
+    // OpenRouterAiModelEnum.gemini25FlashMay,
+    // RequestyAiModelEnum.gpt51,
   ];
 
   // Define the evaluation models
   const evaluationModels = [
     OpenRouterAiModelEnum.gemini25Pro,
-    OpenRouterAiModelEnum.claudeHaiku45,
+    RequestyAiModelEnum.claudeSonnet45,
   ];
 
   console.log("\n========== STARTING PARALLEL MODEL EVALUATION ==========");

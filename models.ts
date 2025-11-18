@@ -36,6 +36,7 @@ export enum RequestyAiModelEnum {
   claudeOpus4 = "anthropic/claude-opus-4-20250514",
   claudeSonnet4 = "vertex/anthropic/claude-4-sonnet",
   gpt5 = "openai/gpt-5",
+  gpt51 = "openai/gpt-5.1",
   gpt5Thinking = "openai/gpt-5:thinking",
   gpt5MiniThinking = "openai/gpt-5-mini:thinking",
   gpt5Chat = "openai/gpt-5-chat",
@@ -43,6 +44,8 @@ export enum RequestyAiModelEnum {
   gpt5Nano = "openai/gpt-5-nano",
   gptOss120b = "openai/gpt-oss-120b",
   minimaxM2 = "minimaxi/MiniMax-M2",
+  gemini3ProPreview = "google/gemini-3-pro-preview",
+  claudeSonnet45 = "anthropic/claude-sonnet-4-5",
 }
 
 export enum OpenRouterAiModelEnum {
