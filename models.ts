@@ -46,6 +46,7 @@ export enum RequestyAiModelEnum {
   minimaxM2 = "minimaxi/MiniMax-M2",
   gemini3ProPreview = "google/gemini-3-pro-preview",
   claudeSonnet45 = "anthropic/claude-sonnet-4-5",
+  gemini3FlashPreview = "policy/gemini-flash3",
 }
 
 export enum OpenRouterAiModelEnum {

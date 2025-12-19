@@ -831,12 +831,13 @@ async function main() {
   }
 
   const queryModels = [
-    OpenRouterAiModelEnum.gemini25Pro,
-    RequestyAiModelEnum.claudeSonnet45,
-    RequestyAiModelEnum.gemini3ProPreview,
-    RequestyAiModelEnum.gemini25Pro,
-    OpenRouterAiModelEnum.gemini25FlashMay,
-    RequestyAiModelEnum.gpt51,
+    // OpenRouterAiModelEnum.gemini25Pro,
+    // RequestyAiModelEnum.claudeSonnet45,
+    // RequestyAiModelEnum.gemini3ProPreview,
+    // RequestyAiModelEnum.gemini25Pro,
+    // OpenRouterAiModelEnum.gemini25FlashMay,
+    // RequestyAiModelEnum.gpt51,
+    RequestyAiModelEnum.gemini3FlashPreview,
   ];
 
   // Define the evaluation models
